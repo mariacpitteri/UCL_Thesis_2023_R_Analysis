@@ -1,0 +1,4250 @@
+---
+title: "Experiment 2 Analysis"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+# Info on what is r setup: #https://kbroman.org/knitr_knutshell/pages/Rmarkdown.html
+```
+
+
+
+```{r}
+#Install packages before calling them
+library(tidyverse)
+library(jspsychread)
+library(plotrix)
+
+
+###FUNCTIONS
+
+
+#Decide which participants to exclude, retrieve index for TRUE
+getTrueIndexes <- function(trueResultVector) {
+  indexes <- which(trueResultVector == TRUE)
+  return(indexes)
+}
+
+
+
+#Break down single file into multiple single participant files
+fn <- ("/Users/mariapitteri/Library/Mobile Documents/com~apple~CloudDocs/Education/Research/Results/Experiment2/jatos_results_20230724173507.txt"
+)
+
+
+#readlines -> reads text lines from a connection
+text<-readLines(fn)
+catchTrialScoresList <- list()
+catchTrialSlideList <- list()
+
+#Loop through each part of the text file and write it to a separate text file
+for(i in 1:length(text)) {
+
+  part <- substring(text[i],
+          first=ifelse(i==1,1,1),
+          last=ifelse(i==25, nchar(text[i]), nchar(text[i])))
+
+  
+  
+#Write the i-th part to a separate text file
+  #Paste0() function -> acts just like paste function but with a default separator, paste0('df',1:6) -> "df1", "df2"...
+  #Files are automatically saved in same directory as R document
+  writeLines(part, paste0("part", i, ".txt"))
+  
+  #Create function to move the files to "Parts" folder
+  directoryMove <- function(from, to) {
+    todir <- dirname(to)
+    if (!isTRUE(file.info(todir)$isdir)) dir.create(todir, recursive=TRUE)
+    file.rename(from = from,  to = to)
+}
+
+directoryMove(from = paste0("/Users/mariapitteri/Library/Mobile Documents/com~apple~CloudDocs/Education/Research/Results/Experiment2/", paste0("part", i, ".txt")),
+               to = paste0("/Users/mariapitteri/Library/Mobile Documents/com~apple~CloudDocs/Education/Research/Results/Experiment2/Parts/", paste0("part", i, ".txt")))
+
+}
+
+#Extract Data per participant
+
+
+#Extract number of lines (41) from experiment 2 and 13 from experiment 2
+nSub <- length(text)+40
+
+combinedCatch <- matrix(nrow = nSub, ncol = 6)
+
+
+for(iSub in 1:nSub) {
+  partDirectory <-
+    paste(
+      "/Users/mariapitteri/Library/Mobile Documents/com~apple~CloudDocs/Education/Research/Results/Experiment2/Parts/part",
+      as.character(iSub),
+      ".txt",
+      sep = ""
+    )
+  
+#Read the data from each participant
+dataPerParticipant<- read_jspsych(partDirectory)
+
+#Find way to extract catch trials for each iteration
+  
+  
+
+# #Extract data for experiment reconstruction
+# dataReconstruction <- dataPerParticipant %>%
+# filter(trial_type == trial_types$html_keyboard_response) %>%
+# select(raw) %>% #select column raw 
+# process_records(.using = parse_html_keyboard_response) %>% #Processes raw jsPsych data
+# unnest(processed) #unnest expands a list-column containing dataframes into rows and columns
+#     
+# #Extract all ratings from ratingsDf -> meaning extract 'response' column
+# ratingSaving <- (dataReconstruction[[1]][[215]])
+# #Could be done using dataframes better
+# iSentenceIdxDf<-data.frame(matrix(nrow = 12, ncol = 4))
+# 
+# for (i in 0:11) {
+#   iSentenceIdx <- ratingSaving[[paste0("iSentenceIdx", i)]]
+#  
+#   #Shift all indexes from 0 to 1 as R only accepts indexing from 1 on
+#  iSentenceIdxDf[i + 1,] <- unlist(iSentenceIdx, function(output) {output + 1})
+# 
+# 
+# }
+
+# #Extract conditions order and slide index from 0 to 1
+# conditions<-c(unlist(ratingSaving$Conditions))
+# 
+# #Create sentenceList but starting with index 1
+# sentenceList<-rep(1:4, each=12)
+# 
+# #Create trialsIdx starting with index 1
+# IdxTrialsList <- rep(1:48)
+
+
+#####EXTRACT CATCH TRIALS RESPONSE#####
+
+ #Extract catch trials for each iteration
+  catchDf <- dataPerParticipant %>%
+    filter(trial_type == trial_types$html_button_response) %>%
+    select(raw) %>%
+    process_records(.using = parse_html_button_response) %>%
+    unnest(processed)
+
+
+catchTrialScores <- unlist(catchDf$response)
+
+catchTrialScoresList[[iSub]]<-catchTrialScores
+
+
+
+
+#####EXTRACT EXPERIMENT DATA#####
+  
+#Extract ratings with format: raw, rt, response, stimulus, slider_start
+  ratingsDf <- dataPerParticipant %>%
+    filter(trial_type == trial_types$html_slider_response) %>%
+    select(raw) %>% #select column raw
+    process_records(.using = parse_html_slider_response) %>% #Processes raw jsPsych data
+    unnest(processed) #unnest expands a list-column containing dataframes into rows and columns
+    
+
+#Exclude catch slide
+exclude_catchSlide <- c("Déplacez le curseur à droite <br><br></p>", "Déplacez le curseur à gauche <br><br></p>")
+
+#Extract only catchSlide
+catchSlideDf<-subset(ratingsDf, (stimulus %in% exclude_catchSlide))
+catchSlideScore<-catchSlideDf$response
+
+catchTrialSlideList[[iSub]]<-catchSlideScore
+
+
+# Exclude rows with specified 'stimulus'
+ratingsDf <- subset(ratingsDf, !(stimulus %in% exclude_catchSlide))
+
+
+  #Extract all ratings from ratingsDf -> meaning extract 'response' column
+allRating <- ratingsDf$response
+
+
+
+allRating <- ratingsDf$response[!(ratingsDf$stimulus %in% exclude_catchSlide)]
+  #Extract all ratings from ratingsDf -> meaning extract 'response' column
+
+#allRating <- ratingsDf$response
+
+  #Create empty vectors for rating score, rating name, condition, sentence index, sentence
+  
+  ratingScore <- c()
+  ratingName <- c()
+  condition <- c()
+  sntnIdx <- c()
+  sntn <- c()
+  trialsIdx <- c()
+  stimulus<-c()
+  
+
+  #Create for loop to fill in all the lists for each rating from allRating
+  
+  for(i in 1:length(allRating)) {
+    stimulus[i]<-ratingsDf$raw[[i]]$stimulus
+    ratingName[i] <- ratingsDf$raw[[i]]$test_part
+    ratingScore[i] <-ratingsDf$raw[[i]]$response 
+    condition[i] <- ratingsDf$raw[[i]]$condition
+    sntnIdx[i] <- ratingsDf$raw[[i]]$sntnIdx
+    sntn[i] <- ratingsDf$raw[[i]]$sntn
+    trialsIdx[i] <- ratingsDf$raw[[i]]$trialsIdx
+    
+  }
+
+  #Z-score ratings
+  ratingScore<-scale(ratingScore)
+
+  
+  #Create participant df
+df<-data.frame(
+    stimulus,
+    ratingName,
+    ratingScore,
+    condition,
+    sntnIdx,
+    sntn,
+    trialsIdx
+    )
+  
+filteredDf <- df %>%
+  filter(ratingName %in% c('uncRating','resRating','uncOldRating', 'resOldRating','crsRating', 'happyRating', 'val1Rating', 'val2Rating')) %>%
+  mutate(groupUnc = case_when(
+    condition %in% c(0, 3, 6, 9) ~ "no unc conditions",
+    condition %in% c(4, 5, 10, 11) ~ "low unc conditions",
+    condition %in% c(1, 2, 7, 8) ~ "high unc conditions",
+    TRUE ~ NA_character_
+  )) %>%
+  mutate(groupRes = case_when(
+    condition %in% c(2,5,8,11) ~ "low res conditions",
+    condition %in% c(1,4,7,10) ~ "high res conditions",
+    TRUE ~ NA_character_
+  ))%>%
+  mutate(groupVal = case_when(
+    condition %in% c(0,1,2,3,4,5) ~ "pos conditions",
+    condition %in% c(6,7,8,9,10,11) ~ "neg conditions",
+    TRUE ~ NA_character_
+  ))
+
+
+partName <- paste0("dfParticipant", iSub)
+
+
+assign(partName, filteredDf)
+
+
+
+
+}
+
+
+
+#Create overall data frames for each experiment type
+
+# Create an empty vector to store the names of data frames that meet the conditions
+df_names_matching_conditions <- c()
+
+# List of all rating conditions
+rating_conditions <- c("crsRating", "val1Rating", "uncRating", "uncOldRating", "happyRating")
+
+# Loop over each rating condition
+for (condition in rating_conditions) {
+  df_names_condition <- c()  # Vector to store names of data frames matching the current condition
+  
+  for (iSub in 1:nSub) {
+    # Create the variable name for the current participant's data frame
+    var_name <- paste0("dfParticipant", iSub)
+    
+    # Check if the data frame exists in the environment
+    if (exists(var_name)) {
+      # Get the data frame for the current participant
+      df_sub <- get(var_name)
+      
+      # Check if the data frame has the current condition in ratingName
+      if (condition %in% df_sub$ratingName) {
+        df_names_condition <- c(df_names_condition, var_name)
+      }
+    }
+  }
+  
+  # Combine data frames for the current condition
+  combined_df <- NULL
+  
+  for (df_name in df_names_condition) {
+    df_sub <- get(df_name)  # Get the data frame for the current participant
+    
+    # Add a column to identify the participant
+    participant_id <- as.integer(gsub("dfParticipant", "", df_name))
+    df_sub$ParticipantID <- participant_id
+    
+    combined_df <- rbind(combined_df, df_sub)  # Combine the current data frame with the combined data frame
+  }
+  
+  # Add the combined data frame for the current condition to the final data frame
+  if (length(combined_df) > 0) {
+    df_names_matching_conditions <- c(df_names_matching_conditions, condition)
+    assign(paste0("final_df_", condition), combined_df)
+  }
+}
+
+# Print the names of data frames that satisfy each condition
+print(df_names_matching_conditions)
+
+# Print the final combined data frames for each condition (final_df_crsRating, final_df_val1Rating, ...)
+for (condition in df_names_matching_conditions) {
+  print(get(paste0("final_df_", condition)))
+  
+}
+
+
+
+#Get number of participant per experiment
+
+#Crs
+
+num_unique_participants_crsRating <- final_df_crsRating %>%
+  pull(ParticipantID) %>% 
+  n_distinct()
+
+#Unc
+
+num_unique_participants_uncRating <- final_df_uncRating %>%   pull(ParticipantID) %>% 
+  n_distinct()
+
+
+#UncOld
+
+num_unique_participants_uncOldRating <- final_df_uncOldRating %>%   pull(ParticipantID) %>% 
+  n_distinct()
+
+#Sat
+
+num_unique_participants_happyRating <- final_df_happyRating %>%   pull(ParticipantID) %>% 
+  n_distinct()
+
+#Val
+
+num_unique_participants_valRating <- final_df_val1Rating %>%   pull(ParticipantID) %>% 
+  n_distinct()
+
+
+```
+
+Decide which participants to exclude based on catch trials
+
+```{r}
+#Only selected participants that have an overall score < 2 to catch trials
+
+#Returns all the participant name that have a sum <2 at catch trials
+removed_participantsCatch<- which(sapply(catchTrialScoresList, sum) > 2)
+
+
+#Function to check if any number in the vector is above 90 or under 10
+contains_between_11_and_89 <- function(vec) {
+  any(vec >= 11 & vec <= 89)
+}
+
+#Remove participants with <10 and >90 responses at slide trials
+removed_participantsSlide<-which(sapply(catchTrialSlideList, function(x) contains_between_11_and_89(x)))
+
+#Combine catch results in one vector
+removed_participantsOverall<-union(removed_participantsSlide, removed_participantsCatch)
+
+#Correct finalDf by removing participants that failed the tests
+
+final_df_crsRatingExp2 <- final_df_crsRating %>%
+  filter(!(ParticipantID %in% removed_participantsOverall))
+
+final_df_uncOldRatingExp2<- final_df_uncOldRating %>%
+  filter(!(ParticipantID %in% removed_participantsOverall))
+
+final_df_happyRatingExp2 <- final_df_happyRating %>%
+  filter(!(ParticipantID %in% removed_participantsOverall))
+
+final_df_val1RatingExp2 <- final_df_val1Rating %>%
+  filter(!(ParticipantID %in% removed_participantsOverall))
+
+#Don;t forget if you want to look at unc New definition you may want to extract the catch trials
+
+
+```
+
+
+Combine df from both experiment 2 and 3, you need to do the extraction in parallel (same environment different files)
+
+```{r}
+# Combine the data frames using rbind()
+final_df_crsRating <- rbind(final_df_crsRatingExp2, final_df_crsRatingExp3)
+final_df_uncOldRating <- rbind(final_df_uncOldRatingExp2, final_df_uncOldRatingExp3)
+final_df_happyRating <- rbind(final_df_happyRatingExp2, final_df_happyRatingExp3)
+final_df_val1Rating <- rbind(final_df_val1RatingExp2, final_df_val1RatingExp3)
+
+
+#Save to Excel
+
+write_xlsx(final_df_crsRating, "final_df_crsRating.xlsx")
+write_xlsx(final_df_uncOldRating, "final_df_uncOldRating.xlsx")
+write_xlsx(final_df_happyRating, "final_df_happyRating.xlsx")
+write_xlsx(final_df_val1Rating, "final_df_val1Rating.xlsx")
+write_xlsx(final_df_sat1Rating, "final_df_sat1Rating.xlsx")
+
+
+
+```
+
+
+Get overall participants numbers (across experiments 2 and 3)
+```{r}
+#Before catch trials consideration
+
+participants_happy_before<-num_unique_participants_happyRating+num_unique_participants_happyRatingExp3
+
+participants_uncOld_before<-num_unique_participants_uncOldRating+num_unique_participants_uncOldRatingExp3
+
+participants_crs_before<-num_unique_participants_crsRating+num_unique_participants_crsRatingExp3
+
+participants_val_before<-num_unique_participants_valRating+num_unique_participants_valRatingExp3
+
+
+#After catch trials deletion
+participants_happy<-length(unique(final_df_happyRatingExp2$ParticipantID)) +length(unique((final_df_happyRatingExp3$ParticipantID)))
+
+participants_uncOld<-length(unique(final_df_uncOldRatingExp2$ParticipantID)) +length(unique((final_df_uncOldRatingExp3$ParticipantID)))
+
+participants_crs<-length(unique(final_df_crsRatingExp2$ParticipantID)) +length(unique((final_df_crsRatingExp3$ParticipantID)))
+
+participants_val<-length(unique(final_df_val1RatingExp2$ParticipantID)) + length(unique((final_df_val1RatingExp3$ParticipantID)))
+
+
+```
+
+
+Create grouped data frames per sentence level, condition, groups
+```{r}
+
+###CURIOSITY###
+
+
+#Data frame with all crs information on stimulus level
+sentence_level_crs<-final_df_crsRating %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreCrs = mean(ratingScore),
+            median_RatingScoreCrs = median(ratingScore),
+            sd_Crs = sd(ratingScore),
+            se_Crs = std.error(ratingScore))
+
+
+#Data frame with all crs information on stimulus level
+sentence_level_crs_OldSent<-final_df_crsRating %>%
+  filter(sntn<=3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreCrs = mean(ratingScore),
+            median_RatingScoreCrs = median(ratingScore),
+            sd_Crs = sd(ratingScore),
+            se_Crs = std.error(ratingScore))
+
+sentence_level_crs_NewSent<-final_df_crsRating %>%
+  filter(sntn>3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreCrs = mean(ratingScore),
+            median_RatingScoreCrs = median(ratingScore),
+            sd_Crs = sd(ratingScore),
+            se_Crs = std.error(ratingScore))
+  
+
+#Data frame with all info on condition level (useful for condition graph)
+condition_level_crs<-final_df_crsRating %>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreCrs = mean(ratingScore),
+            sd_Crs_Cond = sd(ratingScore),
+            se_Crs_Cond = std.error(ratingScore))
+
+
+#Data frame with all info on groupUnc level
+groupUnc_level_crs<-final_df_crsRating %>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreCrs=mean(ratingScore),
+            sd_Crs_Group = sd(ratingScore),
+            se_Crs_Group = std.error(ratingScore))
+
+
+#Data frame with all info on groupVal level
+groupVal_level_crs<-final_df_crsRating %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreCrs=mean(ratingScore),
+            sd_Crs_Group = sd(ratingScore),
+            se_Crs_Group = std.error(ratingScore))
+
+
+####SAT1
+
+
+#Data frame with all crs information on stimulus level
+sentence_level_sat1_OldSent<-final_df_sat1Rating %>%
+  filter(sntn<=3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreSat1 = mean(ratingScore),
+            median_RatingScoreSat1 = median(ratingScore),
+            sd_Sat1 = sd(ratingScore),
+            se_Sat1 = std.error(ratingScore))
+
+sentence_level_sat1_NewSent<-final_df_sat1Rating %>%
+  filter(sntn>3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreSat1 = mean(ratingScore),
+            median_RatingScoreSat1 = median(ratingScore),
+            sd_Sat1 = sd(ratingScore),
+            se_Sat1 = std.error(ratingScore))
+
+sentence_level_sat1<-final_df_sat1Rating %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreSat1 = mean(ratingScore),
+            median_RatingScoreSat1 = median(ratingScore),
+            sd_Sat1 = sd(ratingScore),
+            se_Sat1 = std.error(ratingScore))
+
+
+
+
+
+
+#Data frame with all info on groupUnc level (Objective)
+groupUnc_level_sat1<-final_df_sat1Rating %>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreSat1=mean(ratingScore),
+            sd_Sat1_Group = sd(ratingScore),
+            se_Sat1_Group = std.error(ratingScore))
+
+#Data frame with all info on groupVal level (Objective)
+groupVal_level_sat1<-final_df_sat1Rating %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreSat1=mean(ratingScore),
+            sd_Sat1_Group = sd(ratingScore),
+            se_Sat1_Group = std.error(ratingScore))
+
+
+####Surprise
+
+
+#Data frame with all crs information on stimulus level
+
+
+sentence_level_surp<-final_df_surpRating %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreSurp = mean(ratingScore),
+            median_RatingScoreSurp = median(ratingScore),
+            sd_Surp = sd(ratingScore),
+            se_Surp = std.error(ratingScore))
+
+
+# sentence_level_surp_OldSent<-final_df_surpRating %>%
+#   group_by(condition, sntn) %>%
+#   summarise(mean_RatingScoreSurp = mean(ratingScore),
+#             median_RatingScoreSurp = median(ratingScore),
+#             sd_Surp = sd(ratingScore),
+#             se_Surp = std.error(ratingScore))
+
+
+sentence_level_surp_NewSent<-final_df_surpRating_NewSent %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreSurp = mean(ratingScore),
+            median_RatingScoreSurp = median(ratingScore),
+            sd_Surp = sd(ratingScore),
+            se_Surp = std.error(ratingScore))
+
+
+#Data frame with all info on groupUnc level (Objective)
+groupUnc_level_surp<-final_df_surpRating %>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreSurp=mean(ratingScore),
+            sd_Surp = sd(ratingScore),
+            se_Surp = std.error(ratingScore))
+
+#Data frame with all info on groupVal level (Objective)
+groupVal_level_surp<-final_df_surpRating %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreSurp=mean(ratingScore),
+            sd_Surp = sd(ratingScore),
+            se_Surp = std.error(ratingScore))
+
+
+
+###UNCERTAINTY###
+
+#Data frame with all unc information on stimulus level
+sentence_level_unc<-final_df_uncRating %>%
+  filter(ratingName=="uncRating")%>%
+  group_by(condition,sntn) %>%
+  summarise(mean_RatingScoreUnc=mean(ratingScore),
+            median_RatingScoreUnc = median(ratingScore),
+            sd_Unc = sd(ratingScore),
+            se_Unc = std.error(ratingScore))
+
+#Data frame with all unc info on condition level
+condition_level_unc<-final_df_uncRating %>%
+  filter(ratingName=="uncRating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreUnc=mean(ratingScore),
+            sd_Unc_Cond = sd(ratingScore),
+            se_Unc_Cond = std.error(ratingScore))
+
+
+###RESOLUTION###
+
+#Data frame with all res information on stimulus level
+sentence_level_res<-final_df_uncRating %>%
+  filter(ratingName=="resRating")%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreRes=mean(ratingScore),
+            median_RatingScoreRes = median(ratingScore),
+            sd_Res = sd(ratingScore),
+            se_Res = std.error(ratingScore))
+
+#Data frame with all res info on condition level
+condition_level_res<-final_df_uncRating %>%
+  filter(ratingName=="resRating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreRes=mean(ratingScore),
+            sd_Res_Cond = sd(ratingScore),
+            se_Res_Cond = std.error(ratingScore))
+
+
+
+
+
+###UNCERTAINTY OLD###
+
+#Data frame with all unc information on stimulus level
+sentence_level_uncOld<-final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating")%>%
+  group_by(condition,sntn) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            median_RatingScoreUncOld = median(ratingScore),
+            sd_UncOld = sd(ratingScore),
+            se_UncOld = std.error(ratingScore))
+
+
+sentence_level_uncOld_OldSent<-final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating", sntn<=3)%>%
+  group_by(condition,sntn) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            median_RatingScoreUncOld = median(ratingScore),
+            sd_UncOld = sd(ratingScore),
+            se_UncOld = std.error(ratingScore))
+
+sentence_level_uncOld_NewSent<-final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating", sntn>3)%>%
+  group_by(condition,sntn) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            median_RatingScoreUncOld = median(ratingScore),
+            sd_UncOld = sd(ratingScore),
+            se_UncOld = std.error(ratingScore))
+
+
+
+
+#Data frame with all info on condition level
+condition_level_uncOld<-final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            sd_UncOld_Cond = sd(ratingScore),
+            se_UncOld_Cond = std.error(ratingScore))
+
+#Data frame with all unc info on groupUnc level (objective)
+
+groupUnc_level_uncOld<-final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating")%>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            sd_UncOld_Group = sd(ratingScore),
+            se_UncOld_Group = std.error(ratingScore))
+
+
+groupUnc_level_uncOld_OldSent<-final_df_uncOldRating %>%
+  filter(sntn<=3, ratingName=="uncOldRating")%>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            sd_UncOld_Group = sd(ratingScore),
+            se_UncOld_Group = std.error(ratingScore))
+
+
+groupUnc_level_uncOld_NewSent<-final_df_uncOldRating %>%
+  filter(sntn>3, ratingName=="uncOldRating")%>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreUncOld=mean(ratingScore),
+            sd_UncOld_Group = sd(ratingScore),
+            se_UncOld_Group = std.error(ratingScore))
+
+
+
+###RESOLUTION###
+
+#Data frame with all res information on stimulus level
+sentence_level_resOld<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating")%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            median_RatingScoreResOld = median(ratingScore),
+            sd_ResOld = sd(ratingScore),
+            se_ResOld = std.error(ratingScore))
+
+
+sentence_level_resOld_OldSent<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating", sntn<=3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            median_RatingScoreResOld = median(ratingScore),
+            sd_ResOld = sd(ratingScore),
+            se_ResOld = std.error(ratingScore))
+
+
+sentence_level_resOld_NewSent<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating", sntn>3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            median_RatingScoreResOld = median(ratingScore),
+            sd_ResOld = sd(ratingScore),
+            se_ResOld = std.error(ratingScore))
+
+
+
+#Data frame with all info on condition level
+condition_level_resOld<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            sd_ResOld_Cond = sd(ratingScore),
+            se_ResOld_Cond = std.error(ratingScore))
+
+#Data frame with all res info per groupRes (objective)
+
+groupRes_level_resOld<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating")%>%
+  group_by(groupRes) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            sd_ResOld_Group = sd(ratingScore),
+            se_ResOld_Group = std.error(ratingScore))
+
+
+groupRes_level_resOld_OldSent<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating", sntn<=3)%>%
+  group_by(groupRes) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            sd_ResOld_Group = sd(ratingScore),
+            se_ResOld_Group = std.error(ratingScore))
+
+
+groupRes_level_resOld_NewSent<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating", sntn>3)%>%
+  group_by(groupRes) %>%
+  summarise(mean_RatingScoreResOld=mean(ratingScore),
+            sd_ResOld_Group = sd(ratingScore),
+            se_ResOld_Group = std.error(ratingScore))
+
+
+#Data frame with all res info per groupVal (ojbective)
+groupVal_level_resOld<-final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating")%>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingResOld=mean(ratingScore),
+            sd_ResOld_Group = sd(ratingScore),
+            se_ResOld_Group = std.error(ratingScore))
+
+
+
+
+
+###SATISFACTION###
+
+#Data frame with all happy information on stimulus level
+sentence_level_happy<-final_df_happyRating %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreHappy = mean(ratingScore),
+            median_RatingScoreHappy = median(ratingScore),
+            sd_Happy = sd(ratingScore), 
+            se_Happy = std.error(ratingScore))
+
+
+#Sentence level only for sentence 0 to 4
+
+sentence_level_happy_oldSent<-final_df_happyRating %>%
+  filter(sntn<=3) %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreHappy = mean(ratingScore),
+            median_RatingScoreHappy = median(ratingScore),
+            sd_Happy = sd(ratingScore), 
+            se_Happy = std.error(ratingScore))
+
+
+sentence_level_happy_newSent<-final_df_happyRating %>%
+  filter(sntn>3) %>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreHappy = mean(ratingScore),
+            median_RatingScoreHappy = median(ratingScore),
+            sd_Happy = sd(ratingScore), 
+            se_Happy = std.error(ratingScore))
+
+
+
+
+#Data frame with all info on condition level
+condition_level_happy<-final_df_happyRating %>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreHappy=mean(ratingScore),
+            sd_Happy_Cond = sd(ratingScore),
+            se_Happy_Cond = std.error(ratingScore))
+
+#Data frame with all info on groupUnc level (objective)
+groupUnc_level_happy<-final_df_happyRating %>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreHappy=mean(ratingScore),
+            sd_Happy_Group = sd(ratingScore),
+            se_Happy_Group = std.error(ratingScore))
+
+
+
+#Data frame with all info on groupRes level (objective)
+groupRes_level_happy<-final_df_happyRating %>%
+  group_by(groupRes) %>%
+  summarise(mean_RatingScoreHappy=mean(ratingScore),
+            sd_Happy_Group = sd(ratingScore),
+            se_Happy_Group = std.error(ratingScore))
+
+
+#Data frame with all info on groupVal level (Objective)
+groupVal_level_happy<-final_df_happyRating %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreHappy=mean(ratingScore),
+            sd_Happy_Group = sd(ratingScore),
+            se_Happy_Group = std.error(ratingScore))
+
+
+###VALENCE
+
+#Data frame with all val1 information on stimulus level
+sentence_level_val1<-final_df_val1Rating %>%
+  filter(ratingName=="val1Rating")%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal1=mean(ratingScore),
+            median_RatingScoreVal1 = median(ratingScore),
+            sd_Val1 = sd(ratingScore),
+            se_Val1 = std.error(ratingScore))
+
+sentence_level_val1_OldSent<-final_df_val1Rating %>%
+  filter(ratingName=="val1Rating", sntn<=3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal1=mean(ratingScore),
+            median_RatingScoreVal1 = median(ratingScore),
+            sd_Val1 = sd(ratingScore),
+            se_Val1 = std.error(ratingScore))
+
+sentence_level_val1_NewSent<-final_df_val1Rating %>%
+  filter(ratingName=="val1Rating", sntn>3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal1=mean(ratingScore),
+            median_RatingScoreVal1 = median(ratingScore),
+            sd_Val1 = sd(ratingScore),
+            se_Val1 = std.error(ratingScore))
+
+
+
+#Data frame with all info on condition level
+condition_level_val1<-final_df_val1Rating %>%
+  filter(ratingName=="val1Rating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreVal1=mean(ratingScore),
+            sd_Val1_Cond = sd(ratingScore),
+            se_Val1_Cond = std.error(ratingScore))
+
+#Data frame with all val2 information on stimulus level
+sentence_level_val2<-final_df_val1Rating %>%
+  filter(ratingName=="val2Rating")%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal2=mean(ratingScore),
+            median_RatingScoreVal2 = median(ratingScore),
+            sd_Val2 = sd(ratingScore),
+            se_Val2 = std.error(ratingScore))
+
+
+sentence_level_val2_OldSent<-final_df_val1Rating %>%
+  filter(ratingName=="val2Rating", sntn<=3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal2=mean(ratingScore),
+            median_RatingScoreVal2 = median(ratingScore),
+            sd_Val2 = sd(ratingScore),
+            se_Val2 = std.error(ratingScore))
+
+
+sentence_level_val2_NewSent<-final_df_val1Rating %>%
+  filter(ratingName=="val2Rating", sntn>3)%>%
+  group_by(condition, sntn) %>%
+  summarise(mean_RatingScoreVal2=mean(ratingScore),
+            median_RatingScoreVal2 = median(ratingScore),
+            sd_Val2 = sd(ratingScore),
+            se_Val2 = std.error(ratingScore))
+
+
+#Data frame with all info on condition level
+condition_level_val2<-final_df_val1Rating %>%
+  filter(ratingName=="val2Rating")%>%
+  group_by(condition) %>%
+  summarise(mean_RatingScoreVal2=mean(ratingScore),
+            sd_Val2_Cond = sd(ratingScore),
+            se_Val2_Cond = std.error(ratingScore))
+
+
+#Data frame with all val info on groupVal level (objective)
+
+groupVal_level_val<-final_df_val1Rating %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreVal=mean(ratingScore),
+            sd_Val_Group = sd(ratingScore),
+            se_Val_Group = std.error(ratingScore))
+
+groupVal_level_val_OldSent<-final_df_val1Rating %>%
+  filter(sntn<=3) %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreVal=mean(ratingScore),
+            sd_Val_Group = sd(ratingScore),
+            se_Val_Group = std.error(ratingScore))
+
+
+
+groupVal_level_val_NewSent<-final_df_val1Rating %>%
+  filter(sntn>3) %>%
+  group_by(groupVal) %>%
+  summarise(mean_RatingScoreVal=mean(ratingScore),
+            sd_Val_Group = sd(ratingScore),
+            se_Val_Group = std.error(ratingScore))
+
+
+#Data frame with all val info on groupUnc level (objective)
+
+groupUnc_level_val1<-final_df_val1Rating %>%
+  group_by(groupUnc) %>%
+  summarise(mean_RatingScoreVal=mean(ratingScore),
+            sd_Val_Group = sd(ratingScore),
+            se_Val_Group = std.error(ratingScore))
+
+
+#Data frame with all val info on groupRes level (objective)
+
+groupRes_level_val1<-final_df_val1Rating %>%
+  group_by(groupRes) %>%
+  summarise(mean_RatingScoreVal=mean(ratingScore),
+            sd_Val_Group = sd(ratingScore),
+            se_Val_Group = std.error(ratingScore))
+
+```
+
+
+Create condition and sentences overall data frames
+
+```{r}
+#Create unique data frame on stimuli level, each column is a different rating
+
+sentence_level_overall1 <- bind_cols(
+  condition=sentence_level_crs$condition,
+  sntn=sentence_level_crs$sntn,
+  
+  mean_RatingScoreCrs = sentence_level_crs$mean_RatingScoreCrs,
+  median_RatingScoreCrs = sentence_level_crs$median_RatingScoreCrs,
+  sd_Crs=sentence_level_crs$sd_Crs,
+  se_Crs=sentence_level_crs$se_Crs,
+  
+  # #sat1 is only 48 instead of 96
+  # mean_RatingScoreSat1 = sentence_level_sat1$mean_RatingScoreSat1,
+  # median_RatingScoreSat1 = sentence_level_sat1$median_RatingScoreSat1,
+  # sd_Sat1=sentence_level_sat1$sd_Sat1,
+  # se_Sat1=sentence_level_sat1$se_Sat1,
+  
+  # mean_RatingScoreUnc = sentence_level_unc$mean_RatingScoreUnc,
+  # sd_Unc=sentence_level_unc$sd_Unc,
+  # se_Unc=sentence_level_unc$se_Unc,
+  # mean_RatingScoreRes = sentence_level_res$mean_RatingScoreRes,
+  # sd_Res=sentence_level_res$sd_Res,
+  # se_Res=sentence_level_res$se_Res,
+  
+
+  
+
+  
+  mean_RatingScoreUncOld = sentence_level_uncOld$mean_RatingScoreUncOld,
+  median_RatingScoreUncOld = sentence_level_uncOld$median_RatingScoreUncOld,
+  sd_UncOld=sentence_level_uncOld$sd_UncOld,
+  se_UncOld=sentence_level_uncOld$se_UncOld,
+  mean_RatingScoreResOld = sentence_level_resOld$mean_RatingScoreResOld,
+  median_RatingScoreResOld = sentence_level_resOld$median_RatingScoreResOld,
+  sd_ResOld=sentence_level_resOld$sd_ResOld,
+  se_ResOld=sentence_level_resOld$se_ResOld,
+  
+  
+  mean_RatingScoreSurp = sentence_level_surp$mean_RatingScoreSurp,
+  median_RatingScoreSurp = sentence_level_surp$median_RatingScoreSurp,
+  sd_Surp=sentence_level_surp$sd_Surp,
+  se_Surp=sentence_level_surp$se_Surp,
+  
+  mean_RatingScoreHappy = sentence_level_happy$mean_RatingScoreHappy,
+  median_RatingScoreHappy = sentence_level_happy$median_RatingScoreHappy,
+  sd_Happy=sentence_level_happy$sd_Happy,
+  se_Happy=sentence_level_happy$se_Happy,
+  
+  mean_RatingScoreVal1 = sentence_level_val1$mean_RatingScoreVal1,
+  median_RatingScoreVal1 = sentence_level_val1$median_RatingScoreVal1,
+  sd_Val1=sentence_level_val1$sd_Val1,
+  se_Val1=sentence_level_val1$se_Val1,
+  mean_RatingScoreVal2 = sentence_level_val2$mean_RatingScoreVal2,
+  median_RatingScoreVal2 = sentence_level_val2$median_RatingScoreVal2,
+  sd_Val2=sentence_level_val2$sd_Val2,
+  se_Val2=sentence_level_val2$se_Val2,
+)
+
+
+
+  
+
+
+#Create unique data frame on condition level, each column is a different rating
+
+condition_level_overall1 <- bind_cols(
+  condition=condition_level_crs$condition,
+  
+  mean_RatingScoreCrs_Cond = condition_level_crs$mean_RatingScoreCrs,
+  sd_Crs_Cond=condition_level_crs$sd_Crs_Cond,
+  se_Crs_Cond=condition_level_crs$se_Crs_Cond,
+  
+  # mean_RatingScoreUnc_Cond = condition_level_unc$mean_RatingScoreUnc,
+  # sd_Unc_Cond=condition_level_unc$sd_Unc_Cond,
+  # se_Unc_Cond=condition_level_unc$se_Unc_Cond,
+  # mean_RatingScoreRes_Cond = condition_level_res$mean_RatingScoreRes,
+  # sd_Res_Cond=condition_level_res$sd_Res_Cond,
+  # se_Res_Cond=condition_level_res$se_Res_Cond,
+  # 
+  mean_RatingScoreUncOld_Cond = condition_level_uncOld$mean_RatingScoreUncOld,
+  sd_UncOld_Cond=condition_level_uncOld$sd_UncOld_Cond,
+  se_UncOld_Cond=condition_level_uncOld$se_UncOld_Cond,
+  mean_RatingScoreResOld_Cond = condition_level_resOld$mean_RatingScoreResOld,
+  sd_ResOld_Cond=condition_level_resOld$sd_ResOld_Cond,
+  se_ResOld_Cond=condition_level_resOld$se_ResOld_Cond,
+  
+  mean_RatingScoreHappy_Cond = condition_level_happy$mean_RatingScoreHappy,
+  sd_Happy_Cond=condition_level_happy$sd_Happy_Cond,
+  se_Happy_Cond=condition_level_happy$se_Happy_Cond,
+  
+  mean_RatingScoreVal1_Cond = condition_level_val1$mean_RatingScoreVal1,
+  sd_Val1_Cond=condition_level_val1$sd_Val1_Cond,
+  se_Val1_Cond=condition_level_val1$se_Val1_Cond,
+  mean_RatingScoreVal2_Cond = condition_level_val2$mean_RatingScoreVal2,
+  sd_Val2_Cond=condition_level_val2$sd_Val2_Cond,
+  se_Val2_Cond=condition_level_val2$se_Val2_Cond,
+)
+
+```
+
+
+Test the creation of unc conditions according to people's ratings
+
+```{r}
+# Given minimum and maximum values
+min_valueUnc <- min(sentence_level_overall1$mean_RatingScoreUncOld)
+min_valueUnc_ort <- min(sentence_level_overall1$mean_RatingScoreUncOld_ort)
+
+min_valueRes<- min(sentence_level_overall1$mean_RatingScoreResOld)
+max_valueUnc <- max(sentence_level_overall1$mean_RatingScoreUncOld)
+max_valueUnc_ort <- max(sentence_level_overall1$mean_RatingScoreUncOld_ort)
+max_valueRes <- max(sentence_level_overall1$mean_RatingScoreResOld)
+
+min_valueVal<- min(final_df_val1Rating$ratingScore)
+max_valueVal<- max(final_df_val1Rating$ratingScore)
+
+# Calculate the absolute difference between min and max
+abs_diffUnc <- abs(max_valueUnc - min_valueUnc)
+abs_diffUnc_ort<-abs(max_valueUnc_ort-min_valueUnc_ort)
+abs_diffRes <- abs(max_valueRes - min_valueRes)
+abs_diffVal <- abs(max_valueVal - min_valueVal)
+
+# Divide the absolute difference into  groups
+group_intervalUnc <- abs_diffUnc / 3
+group_intervalUnc_ort <- abs_diffUnc_ort / 3
+group_intervalRes <- abs_diffRes / 2
+group_intervalVal <- abs_diffVal / 2
+
+# Calculate the breaking points for the three groups
+breakpointsUnc <- c(min_valueUnc, min_valueUnc + group_intervalUnc, min_valueUnc + 2 * group_intervalUnc, max_valueUnc)
+breakpointsUnc_ort <- c(min_valueUnc_ort, min_valueUnc_ort + group_intervalUnc_ort, min_valueUnc_ort + 2 * group_intervalUnc_ort, max_valueUnc_ort)
+
+
+
+breakpointsRes <- c(min_valueRes, min_valueRes + group_intervalRes, max_valueRes)
+
+
+breakpointsVal <- c(min_valueVal, min_valueVal + group_intervalVal, max_valueVal)
+
+# Print the breaking points
+print(breakpointsUnc)
+print(breakpointsRes)
+print(breakpointsVal)
+
+
+
+
+#Condition level
+
+
+# Given minimum and maximum values
+
+
+min_valueUnc_Cond <- min(condition_level_overall1$mean_RatingScoreUncOld_Cond)
+min_valueRes_Cond<- min(condition_level_overall1$mean_RatingScoreResOld_Cond)
+max_valueUnc_Cond <- max(condition_level_overall1$mean_RatingScoreUncOld_Cond)
+max_valueRes_Cond<- max(condition_level_overall1$mean_RatingScoreResOld_Cond)
+
+
+# Calculate the absolute difference between min and max
+abs_diffUnc_Cond <- abs(max_valueUnc_Cond - min_valueUnc_Cond)
+abs_diffRes_Cond <- abs(max_valueRes_Cond - min_valueRes_Cond)
+
+
+# Divide the absolute difference into  groups
+group_intervalUnc_Cond <- abs_diffUnc_Cond / 3
+group_intervalRes_Cond <- abs_diffRes_Cond / 2
+
+
+# Calculate the breaking points for the three groups
+breakpointsUnc_Cond <- c(min_valueUnc_Cond, min_valueUnc_Cond + group_intervalUnc_Cond, min_valueUnc_Cond + 2 * group_intervalUnc_Cond, max_valueUnc_Cond)
+
+breakpointsRes_Cond <- c(min_valueRes_Cond, min_valueRes_Cond + group_intervalRes_Cond, max_valueRes_Cond)
+
+
+# Print the breaking points
+print(breakpointsUnc_Cond)
+print(breakpointsRes_Cond)
+
+
+
+
+
+```
+
+Integrate subjective ratings of unc to subjective ratings of happy, crs, val data frames
+
+```{r}
+
+sentence_level_overall1 <- sentence_level_overall1 %>%
+   mutate(groupUncRated = case_when(
+     mean_RatingScoreUncOld < breakpointsUnc[2] ~ "no unc conditions",
+     mean_RatingScoreUncOld > breakpointsUnc[2] & mean_RatingScoreUncOld < breakpointsUnc[3] ~ "low unc conditions",
+     mean_RatingScoreUncOld > breakpointsUnc[3] ~ "high unc conditions",
+    TRUE ~ NA_character_
+   ))
+
+
+sentence_level_overall1 <- sentence_level_overall1 %>%
+   mutate(groupUncRated_Ort = case_when(
+     mean_RatingScoreUncOld < breakpointsUnc_ort[2] ~ "no unc conditions",
+     mean_RatingScoreUncOld > breakpointsUnc_ort[2] & mean_RatingScoreUncOld < breakpointsUnc_ort[3] ~ "low unc conditions",
+     mean_RatingScoreUncOld > breakpointsUnc_ort[3] ~ "high unc conditions",
+    TRUE ~ NA_character_
+   ))
+
+sentence_level_overall1 <- sentence_level_overall1 %>%
+   mutate(groupResRated = case_when(
+     mean_RatingScoreResOld < breakpointsRes[2] ~ "low res",
+     mean_RatingScoreResOld > breakpointsRes[2] ~"high res",
+     TRUE ~ NA_character_
+   ))
+
+
+
+sentence_level_overall1 <- sentence_level_overall1 %>%
+  mutate(groupValRated = case_when(
+    mean_RatingScoreVal1< breakpointsVal[2] ~ "negative val",
+    mean_RatingScoreVal2< breakpointsVal[2] ~ "negative val",
+    mean_RatingScoreVal1> breakpointsRes[2] ~"positive val",
+    mean_RatingScoreVal2> breakpointsRes[2] ~"positive val",
+     TRUE ~ NA_character_
+  ))
+
+
+
+#Condition level
+
+
+condition_level_overall1 <- condition_level_overall1 %>%
+   mutate(groupUncRated = case_when(
+     mean_RatingScoreUncOld_Cond < breakpointsUnc[2] ~ "no unc conditions",
+     mean_RatingScoreUncOld_Cond > breakpointsUnc[2] & mean_RatingScoreUncOld_Cond < breakpointsUnc[3] ~ "low unc conditions",
+     mean_RatingScoreUncOld_Cond > breakpointsUnc[3] ~ "high unc conditions",
+    TRUE ~ NA_character_
+   ))
+
+condition_level_overall1 <- condition_level_overall1 %>%
+   mutate(groupResRated = case_when(
+     mean_RatingScoreResOld_Cond < breakpointsRes[2] ~ "low res",
+     mean_RatingScoreResOld_Cond > breakpointsRes[2] ~"high res",
+     TRUE ~ NA_character_
+   ))
+
+
+
+
+```
+
+Create data frames with groupings depending on subjective unc, res, val ratings
+
+```{r}
+####CURIOSITY
+
+
+#Create df with crs ratings grouped by subjective groupUncRated
+
+crs_uncRated_group <- sentence_level_overall1 %>%
+  group_by(groupUncRated) %>%
+  summarise(mean_RatingScoreCrsGroup = mean(mean_RatingScoreCrs),
+            sd_Crs_Group = sd(mean_RatingScoreCrs),
+            se_Crs_Group = std.error(mean_RatingScoreCrs), .groups = "drop")
+
+
+#Create df with crs ratings grouped by subjective groupValRated
+
+crs_valRated_group <- sentence_level_overall1 %>%
+  group_by(groupValRated) %>%
+  summarise(mean_RatingScoreCrsGroup = mean(mean_RatingScoreCrs),
+            sd_Crs_Group = sd(mean_RatingScoreCrs),
+            se_Crs_Group = std.error(mean_RatingScoreCrs), .groups = "drop")
+
+
+
+####UNCERTAINTY OLD
+
+#Create df with uncOld ratings grouped by subjective groupUncRated
+
+uncOld_uncRated_group <- sentence_level_overall1 %>%
+  group_by(groupUncRated) %>%
+  summarise(mean_RatingScoreUncOldGroup = mean(mean_RatingScoreUncOld),
+            sd_UncOld_Group = sd(mean_RatingScoreUncOld),
+            se_UncOld_Group = std.error(mean_RatingScoreUncOld), .groups = "drop")
+
+
+#Create df with uncOld ratings grouped by subjective groupValRated
+
+uncOld_valRated_group <- sentence_level_overall1 %>%
+  group_by(groupValRated) %>%
+  summarise(mean_RatingScoreUncOldGroup = mean(mean_RatingScoreUncOld),
+            sd_UncOld_Group = sd(mean_RatingScoreUncOld),
+            se_UncOld_Group = std.error(mean_RatingScoreUncOld), .groups = "drop")
+
+
+######RESOLUTION OLD
+
+
+#Create df with resOld ratings grouped by subjective groupResRated
+
+resOld_resRated_group <- sentence_level_overall1 %>%
+  group_by(groupResRated) %>%
+  summarise(mean_RatingScoreResOldGroup = mean(mean_RatingScoreResOld),
+            sd_ResOld_Group = sd(mean_RatingScoreResOld),
+            se_ResOld_Group = std.error(mean_RatingScoreResOld), .groups = "drop")
+
+
+
+#Create df with resOld ratings grouped by subjective groupValRated
+
+resOld_valRated_group <- sentence_level_overall1 %>%
+  group_by(groupValRated) %>%
+  summarise(mean_RatingScoreResOldGroup = mean(mean_RatingScoreResOld),
+            sd_ResOld = sd(mean_RatingScoreResOld),
+            se_ResOld = std.error(mean_RatingScoreResOld), .groups = "drop")
+
+
+
+
+###SATISFACTION
+
+#Create df with happy ratings grouped by subjective groupUncRated
+
+
+happy_uncRated_group <- sentence_level_overall1 %>%
+  group_by(groupUncRated) %>%
+  summarise(mean_RatingScoreHappyGroup = mean(mean_RatingScoreHappy),
+            sd_Happy_Group = sd(mean_RatingScoreHappy),
+            se_Happy_Group = std.error(mean_RatingScoreHappy))
+
+
+happy_uncRated_group_ort <- sentence_level_overall1 %>%
+  group_by(groupUncRated_Ort) %>%
+  summarise(mean_RatingScoreHappyGroup = mean(mean_RatingScoreHappy),
+            sd_Happy_Group = sd(mean_RatingScoreHappy),
+            se_Happy_Group = std.error(mean_RatingScoreHappy))
+
+
+happy_uncRated_group_Exp3 <- sentence_level_overall1 %>%
+  filter(sntn>3)%>%
+  group_by(groupUncRated) %>%
+  summarise(mean_RatingScoreHappyGroup = mean(mean_RatingScoreHappy),
+            sd_Happy_Group = sd(mean_RatingScoreHappy),
+            se_Happy_Group = std.error(mean_RatingScoreHappy))
+
+
+
+#Create df with happy ratings grouped by subjective groupResRated
+
+happy_resRated_group <- sentence_level_overall1 %>%
+  group_by(groupResRated) %>%
+  summarise(mean_RatingScoreHappyGroup = mean(mean_RatingScoreHappy),
+            sd_Happy = sd(mean_RatingScoreHappy),
+            se_Happy = std.error(mean_RatingScoreHappy), .groups = "drop")
+
+
+#Create happy df grouped by valGroupRated
+
+happy_valRated_group <- sentence_level_overall1 %>%
+  group_by(groupValRated) %>%
+  summarise(mean_RatingScoreHappyGroup = mean(mean_RatingScoreHappy),
+            sd_Happy = sd(mean_RatingScoreHappy),
+            se_Happy = std.error(mean_RatingScoreHappy), .groups = "drop")
+
+
+#######VALENCE
+
+
+#Create df with val ratings grouped by subjective groupValRated
+
+val_valRated_group <- sentence_level_overall1 %>%
+  group_by(groupValRated) %>%
+  summarise(mean_RatingScoreValGroup = mean(mean_RatingScoreVal1+mean_RatingScoreVal2),
+            sd_Val_Group = sd(mean_RatingScoreVal1+mean_RatingScoreVal2),
+            se_Val_Group = std.error(mean_RatingScoreVal1+mean_RatingScoreVal2), .groups = "drop")
+
+
+#Create df with val ratings grouped by subjective groupUncRated
+
+val_uncRated_group <- sentence_level_overall1 %>%
+  group_by(groupUncRated) %>%
+  summarise(mean_RatingScoreValGroup = mean(mean_RatingScoreVal1+mean_RatingScoreVal2),
+            sd_Val_Group = sd(mean_RatingScoreVal1+mean_RatingScoreVal2),
+            se_Val_Group = std.error(mean_RatingScoreVal1+mean_RatingScoreVal2), .groups = "drop")
+
+
+
+
+```
+
+
+Onto Plots
+
+Sanity Checks
+
+Subjective uncertainty ordered by objective uncertainty per condition
+```{r}
+#Uncertainty old per condition across participants
+
+#Create plot with no, low and high uncertainty
+
+#no unc conditions (0,3,6,9)
+#low unc conditions (4,5,10,11)
+#high unc conditions (1,2,7,8)
+
+condition_order <- c(0, 3, 6, 9, 4, 5, 10, 11, 1, 2, 7, 8)
+valenceColor <- setNames(c("antiquewhite", "antiquewhite", "antiquewhite", "antiquewhite", "darkseagreen2", "darkseagreen2", "coral", "coral", "darkseagreen2", "darkseagreen2", "coral", "coral"), condition_order)
+
+# Create the bar plot
+ggplot(data = condition_level_overall1)+
+  aes(x = factor(condition, levels = condition_order), y = mean_RatingScoreUncOld_Cond, fill = factor(condition)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = valenceColor) +  # Set custom colors
+  geom_errorbar(aes(ymin = mean_RatingScoreUncOld_Cond - se_UncOld_Cond, ymax = mean_RatingScoreUncOld_Cond + se_UncOld_Cond),width = 0.2, position = position_dodge(width = 0.9)) +
+  labs(x = " ", y = " ") +
+  scale_x_discrete(labels = NULL)+
+  scale_y_continuous(breaks = seq(-1, 1, by = 0.5))+
+  theme_classic()
+
+
+
+```
+
+Subjective uncertainty ordered by objective uncertainty
+```{r}
+
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+sanitycheckUnc<-ggplot(data = groupUnc_level_uncOld) +
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreUncOld, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreUncOld - se_UncOld_Group, ymax = mean_RatingScoreUncOld + se_UncOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckUnc.png",plot = sanitycheckUnc, dpi = 600, width = 10, height = 7)
+
+sanitycheckUnc
+```
+
+
+```{r}
+
+# Perform t-tests between all combinations
+combinations <- combn(unique(final_df_uncOldRating$groupUnc), 2)
+
+ttest_results <- lapply(seq_len(ncol(combinations)), function(i) {
+  condition1 <- combinations[1, i]
+  condition2 <- combinations[2, i]
+  
+  data1 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition1, ratingName == "uncOldRating") %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition2, ratingName == "uncOldRating") %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  ttest_result$comparison <- paste(condition1, "vs", condition2)
+  
+  return(ttest_result)
+})
+
+# Print t-test results for each comparison
+for (i in seq_along(ttest_results)) {
+  print(ttest_results[[i]])
+}
+
+#check combinations to see which tests corresponds to what
+
+
+```
+
+
+Subjective uncertainty ordered by objective uncertainty Old sentences
+```{r}
+
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+sanitycheckUnc<-ggplot(data = groupUnc_level_uncOld_OldSent) +
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreUncOld, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreUncOld - se_UncOld_Group, ymax = mean_RatingScoreUncOld + se_UncOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckUnc_OldSent.png",plot = sanitycheckUnc, dpi = 600, width = 10, height = 7)
+
+sanitycheckUnc
+```
+
+
+```{r}
+
+# Perform t-tests between all combinations
+combinations <- combn(unique(final_df_uncOldRating$groupUnc), 2)
+
+ttest_results <- lapply(seq_len(ncol(combinations)), function(i) {
+  condition1 <- combinations[1, i]
+  condition2 <- combinations[2, i]
+  
+  data1 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition1, ratingName == "uncOldRating", sntn<=3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition2, ratingName == "uncOldRating", sntn<=3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  ttest_result$comparison <- paste(condition1, "vs", condition2)
+  
+  return(ttest_result)
+})
+
+# Print t-test results for each comparison
+for (i in seq_along(ttest_results)) {
+  print(ttest_results[[i]])
+}
+
+#check combinations to see which tests corresponds to what
+
+
+```
+
+
+
+
+Subjective uncertainty ordered by objective uncertainty New sentences
+```{r}
+
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+sanitycheckUnc<-ggplot(data = groupUnc_level_uncOld_NewSent) +
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreUncOld, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreUncOld - se_UncOld_Group, ymax = mean_RatingScoreUncOld + se_UncOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckUnc_NewSent.png",plot = sanitycheckUnc, dpi = 600, width = 10, height = 7)
+
+sanitycheckUnc
+```
+
+
+```{r}
+
+# Perform t-tests between all combinations
+combinations <- combn(unique(final_df_uncOldRating$groupUnc), 2)
+
+ttest_results <- lapply(seq_len(ncol(combinations)), function(i) {
+  condition1 <- combinations[1, i]
+  condition2 <- combinations[2, i]
+  
+  data1 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition1, ratingName == "uncOldRating", sntn>3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupUnc == condition2, ratingName == "uncOldRating", sntn>3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  ttest_result$comparison <- paste(condition1, "vs", condition2)
+  
+  return(ttest_result)
+})
+
+# Print t-test results for each comparison
+for (i in seq_along(ttest_results)) {
+  print(ttest_results[[i]])
+}
+
+#check combinations to see which tests corresponds to what
+
+
+```
+
+
+
+
+
+
+
+
+
+
+Subjective uncertainty ordered by subjective uncertainty per condition
+
+Find a way to extract directly from sentene_level_overall a graph ordering conditions bars by uncRated
+
+```{r}
+condition_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+
+# Create the bar plot
+ggplot(data = condition_level_overall1)+
+  aes(x = factor(groupUncRated, levels = condition_order), y = mean_RatingScoreUncOld_Cond, fill = factor(condition)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  #scale_fill_manual(values = c("pink", "beige", "indianred3","pink", "beige", "indianred3","pink", "beige", "indianred3","pink", "beige", "indianred3")) +  # Set custom colors
+  geom_errorbar(aes(ymin = mean_RatingScoreUncOld_Cond - se_UncOld_Cond, ymax = mean_RatingScoreUncOld_Cond + se_UncOld_Cond), width = 0.2, position = position_dodge(width = 0.9)) +
+  labs(x = " ", y = " ") +
+  #scale_x_discrete(labels = condition)+
+  scale_y_continuous(breaks = seq(-1, 1, by = 0.5)) +
+  theme_classic()
+```
+
+
+
+Subjective uncertainty ordered by subjective uncertainty
+
+```{r}
+
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+ggplot(data = uncOld_uncRated_group) +
+    aes(x = factor(groupUncRated,levels = group_order), y = mean_RatingScoreUncOldGroup, fill = factor(groupUncRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreUncOldGroup - se_UncOld_Group, ymax = mean_RatingScoreUncOldGroup + se_UncOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+Subjective Resolution ordered by objective resolution
+```{r}
+#Create plot with low and high resolution old uncertainty
+
+#low resolution conditions (2,5,8,11)
+#high resolution conditions (1,4,7,10)
+
+condition_order <- c(2, 5, 8, 11, 1, 4, 7, 10)
+valenceColor <- setNames(c("darkseagreen2", "darkseagreen2", "coral", "coral", "darkseagreen2", "darkseagreen2", "coral", "coral"), condition_order)
+
+#Filter the data frame before creating the plot
+filtered_data <- condition_level_overall1 %>%
+  filter(condition %in% condition_order)
+
+#Create the bar plot
+ggplot(data = filtered_data,
+       aes(x = factor(condition, levels = condition_order), y = mean_RatingScoreResOld_Cond, fill = factor(condition))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = valenceColor) +  # Set custom colors
+  geom_errorbar(aes(ymin = mean_RatingScoreResOld_Cond - se_ResOld_Cond, ymax = mean_RatingScoreResOld_Cond + se_ResOld_Cond), width = 0.2, position = position_dodge(width = 0.9)) +
+  labs(x = " ", y = " ") +
+  scale_x_discrete(labels = NULL)+
+  scale_y_continuous(breaks = seq(-1, 1, by = 0.5)) +
+  theme_classic()
+```
+
+Subjective resolution ordered by objective resolution
+
+```{r}
+
+group_order <- c("low res conditions", "high res conditions")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+# Filter the first two rows of groupRes_level_resOld
+filtered_data <- groupRes_level_resOld %>%
+  filter(row_number() <= 2)
+
+sanitycheckRes<-ggplot(data = filtered_data) + 
+    aes(x = factor(groupRes,levels = group_order), y = mean_RatingScoreResOld, fill = factor(groupRes)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreResOld - se_ResOld_Group, ymax = mean_RatingScoreResOld + se_ResOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckRes.png",plot = sanitycheckRes, dpi = 600, width = 10, height = 7)
+```
+
+
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_uncOldRating %>%
+    filter(groupRes == "low res conditions", ratingName == "resOldRating") %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupRes == "high res conditions", ratingName == "resOldRating") %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+Subjective resolution ordered by objective resolution Old Sent
+
+```{r}
+
+group_order <- c("low res conditions", "high res conditions")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+# Filter the first two rows of groupRes_level_resOld
+filtered_data <- groupRes_level_resOld_OldSent %>%
+  filter(row_number() <= 2)
+
+sanitycheckRes<-ggplot(data = filtered_data) + 
+    aes(x = factor(groupRes,levels = group_order), y = mean_RatingScoreResOld, fill = factor(groupRes)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreResOld - se_ResOld_Group, ymax = mean_RatingScoreResOld + se_ResOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckRes_OldSent.png",plot = sanitycheckRes, dpi = 600, width = 10, height = 7)
+
+sanitycheckRes
+```
+
+
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_uncOldRating %>%
+    filter(groupRes == "low res conditions", ratingName == "resOldRating", sntn<=3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupRes == "high res conditions", ratingName == "resOldRating", sntn<=3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+
+
+Subjective resolution ordered by objective resolution New Sent
+
+```{r}
+
+group_order <- c("low res conditions", "high res conditions")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+# Filter the first two rows of groupRes_level_resOld
+filtered_data <- groupRes_level_resOld_NewSent %>%
+  filter(row_number() <= 2)
+
+sanitycheckRes<-ggplot(data = filtered_data) + 
+    aes(x = factor(groupRes,levels = group_order), y = mean_RatingScoreResOld, fill = factor(groupRes)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreResOld - se_ResOld_Group, ymax = mean_RatingScoreResOld + se_ResOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckRes_NewSent.png",plot = sanitycheckRes, dpi = 600, width = 10, height = 7)
+
+sanitycheckRes
+```
+
+
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_uncOldRating %>%
+    filter(groupRes == "low res conditions", ratingName == "resOldRating", sntn>3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_uncOldRating %>%
+    filter(groupRes == "high res conditions", ratingName == "resOldRating", sntn>3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+
+
+Subjective resolution ordered by subjective resolution
+
+```{r}
+group_order <- c("low res", "high res")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+ggplot(data = resOld_resRated_group) + 
+    aes(x = factor(groupResRated,levels = group_order), y = mean_RatingScoreResOldGroup, fill = factor(groupResRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreResOldGroup - se_ResOld_Group, ymax = mean_RatingScoreResOldGroup + se_ResOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+Subjective valence ordered by objective valence
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+sanitycheckVal<-ggplot(data = groupVal_level_val) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreVal, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreVal - se_Val_Group, ymax = mean_RatingScoreVal + se_Val_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckVal.png",plot = sanitycheckVal, dpi = 600, width = 10, height = 7)
+
+```
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_val1Rating %>%
+    filter(groupVal == "neg conditions") %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_val1Rating %>%
+    filter(groupVal == "pos conditions") %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+Subjective valence ordered by objective valence OldSent
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+sanitycheckVal<-ggplot(data = groupVal_level_val_OldSent) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreVal, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreVal - se_Val_Group, ymax = mean_RatingScoreVal + se_Val_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckVal_OldSent.png",plot = sanitycheckVal, dpi = 600, width = 10, height = 7)
+
+```
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_val1Rating %>%
+    filter(groupVal == "neg conditions", sntn<=3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_val1Rating %>%
+    filter(groupVal == "pos conditions", sntn<=3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+
+Subjective valence ordered by objective valence NewSent
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+sanitycheckVal<-ggplot(data = groupVal_level_val_NewSent) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreVal, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreVal - se_Val_Group, ymax = mean_RatingScoreVal + se_Val_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+ggsave(file = "Exp2and3_sanitycheckVal_NewSent.png",plot = sanitycheckVal, dpi = 600, width = 10, height = 7)
+
+```
+
+
+```{r}
+
+
+# Perform t-tests between low and high res
+
+
+  data1 <- final_df_val1Rating %>%
+    filter(groupVal == "neg conditions", sntn>3) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_val1Rating %>%
+    filter(groupVal == "pos conditions", sntn>3) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  
+  ttest_result
+
+
+
+
+```
+
+
+Subjective valence ordered by subjective valence
+
+```{r}
+group_order <- c( "negative val", "positive val")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = val_valRated_group) + 
+    aes(x = factor(groupValRated,levels = group_order), y = mean_RatingScoreValGroup, fill = factor(groupValRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreValGroup - se_Val_Group, ymax = mean_RatingScoreValGroup + se_Val_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+Interactions
+
+
+
+Satisfaction 1
+
+
+Satisfaction 1 as a function of objective uncertainty
+```{r}
+
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+ggplot(data = groupUnc_level_sat1) + 
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreSat1, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreSat1 - se_Sat1_Group, ymax = mean_RatingScoreSat1 + se_Sat1_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+Satisfaction 1 as a function of objective valence
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = groupVal_level_sat1) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreSat1, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreSat1 - se_Sat1_Group, ymax = mean_RatingScoreSat1 + se_Sat1_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+Satisfaction
+
+
+Satisfaction as a function of objective uncertainty
+
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+ggplot(data = groupUnc_level_happy) +
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreHappy, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappy - se_Happy_Group, ymax = mean_RatingScoreHappy + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+# ggsave(file = "Exp2and3_satisfaction_groupUnc.png",plot = satisfaction_groupUnc, dpi = 600, width = 10, height = 7)
+```
+
+
+
+```{r}
+# Perform t-tests between all combinations
+combinations <- combn(unique(final_df_happyRating$groupUnc), 2)
+
+ttest_results <- lapply(seq_len(ncol(combinations)), function(i) {
+  condition1 <- combinations[1, i]
+  condition2 <- combinations[2, i]
+  
+  data1 <- final_df_happyRating %>%
+    filter(groupUnc == condition1) %>%
+    pull(ratingScore)
+  
+  data2 <- final_df_happyRating %>%
+    filter(groupUnc == condition2) %>%
+    pull(ratingScore)
+  
+  ttest_result <- t.test(data1, data2)
+  ttest_result$comparison <- paste(condition1, "vs", condition2)
+  
+  return(ttest_result)
+})
+
+# Print t-test results for each comparison
+for (i in seq_along(ttest_results)) {
+  print(ttest_results[[i]])
+}
+
+#check combinations to see which tests corresponds to what
+```
+
+
+
+Satisfaction as a function of subjective uncertainty
+
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+satisfaction_groupUncRated<-ggplot(data = happy_uncRated_group) +
+    aes(x = factor(groupUncRated,levels = group_order), y = mean_RatingScoreHappyGroup, fill = factor(groupUncRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappyGroup - se_Happy_Group, ymax = mean_RatingScoreHappyGroup + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+
+ggsave(file = "Exp2and3_satisfaction_groupUncRated.png",plot = satisfaction_groupUncRated, dpi = 600, width = 10, height = 7)
+
+
+# Perform one-way ANOVA
+anova_result <- aov(mean_RatingScoreHappy ~ groupUncRated, data = sentence_level_overall1)
+
+# Perform post-hoc Tukey's HSD test
+posthoc_result <- TukeyHSD(anova_result)
+
+# Print ANOVA table
+print(summary(anova_result))
+
+# Print post-hoc test results
+print(posthoc_result)
+
+print(satisfaction_groupUncRated)
+```
+
+Satisfaction as a function of subjective uncertainty orth
+
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+satisfaction_groupUncRated_ort<-ggplot(data = happy_uncRated_group_ort) +
+    aes(x = factor(groupUncRated_Ort,levels = group_order), y = mean_RatingScoreHappyGroup, fill = factor(groupUncRated_Ort)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappyGroup - se_Happy_Group, ymax = mean_RatingScoreHappyGroup + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+
+ggsave(file = "Exp2and3_satisfaction_groupUncRated_ort.png",plot = satisfaction_groupUncRated_ort, dpi = 600, width = 10, height = 7)
+
+
+# Perform one-way ANOVA
+anova_result <- aov(mean_RatingScoreHappy ~ groupUncRated_Ort, data = sentence_level_overall1)
+
+# Perform post-hoc Tukey's HSD test
+posthoc_result <- TukeyHSD(anova_result)
+
+# Print ANOVA table
+print(summary(anova_result))
+
+# Print post-hoc test results
+print(posthoc_result)
+
+print(satisfaction_groupUncRated_ort)
+```
+
+
+
+
+
+
+Exp3
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+satisfaction_groupUncRated_Exp3<-ggplot(data = happy_uncRated_group_Exp3) +
+    aes(x = factor(groupUncRated,levels = group_order), y = mean_RatingScoreHappyGroup, fill = factor(groupUncRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappyGroup - se_Happy_Group, ymax = mean_RatingScoreHappyGroup + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+
+print(satisfaction_groupUncRated_Exp3)
+
+
+
+ggsave(file = "Exp3_satisfaction_groupUncRated.png",plot = satisfaction_groupUncRated_Exp3, dpi = 600, width = 10, height = 7)
+
+
+sentence_level_overall1_Exp3<-sentence_level_overall1%>%
+  filter(sntn>3)
+
+
+# Perform one-way ANOVA
+anova_result <- aov(mean_RatingScoreHappy ~ groupUncRated, data = sentence_level_overall1_Exp3)
+
+# Perform post-hoc Tukey's HSD test
+posthoc_result <- TukeyHSD(anova_result)
+
+# Print ANOVA table
+print(summary(anova_result))
+
+# Print post-hoc test results
+print(posthoc_result)
+
+
+
+```
+
+
+
+
+
+Satisfaction as a function of objective resolution
+
+```{r}
+group_order <- c("low res conditions", "high res conditions")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+# Filter the first two rows of groupRes_level_resOld
+filtered_data <- groupRes_level_happy %>%
+  filter(row_number() <= 2)
+
+ggplot(data = filtered_data) +
+    aes(x = factor(groupRes,levels = group_order), y = mean_RatingScoreHappy, fill = factor(groupRes)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappy - se_Happy_Group, ymax = mean_RatingScoreHappy + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+Satisfaction as a function of subjective resolution
+
+```{r}
+group_order <- c("low res", "high res")
+valenceColor <- setNames(c("lightblue", "deepskyblue"), group_order)
+
+ggplot(data = happy_resRated_group) + 
+    aes(x = factor(groupResRated,levels = group_order), y = mean_RatingScoreHappyGroup, fill = factor(groupResRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappyGroup - se_Happy, ymax = mean_RatingScoreHappyGroup + se_Happy), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+
+Satisfaction as a function of objective valence
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = groupVal_level_happy) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreHappy, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappy - se_Happy_Group, ymax = mean_RatingScoreHappy + se_Happy_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+Satisfaction as a function of subjective valence
+
+```{r}
+group_order <- c( "negative val", "positive val")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = happy_valRated_group) + 
+    aes(x = factor(groupValRated,levels = group_order), y = mean_RatingScoreHappyGroup, fill = factor(groupValRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreHappyGroup - se_Happy, ymax = mean_RatingScoreHappyGroup + se_Happy), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+Curiosity
+
+Curiosity as a function of objective uncertainty
+
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+ggplot(data = groupUnc_level_crs) +
+    aes(x = factor(groupUnc,levels = group_order), y = mean_RatingScoreCrs, fill = factor(groupUnc)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreCrs - se_Crs_Group, ymax = mean_RatingScoreCrs + se_Crs_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+Curiosity as a function of subjective uncertainty
+
+```{r}
+group_order <- c("no unc conditions", "low unc conditions", "high unc conditions")
+valenceColor <- setNames(c("beige", "pink", "indianred3"), group_order)
+
+ggplot(data = crs_uncRated_group) +
+    aes(x = factor(groupUncRated,levels = group_order), y = mean_RatingScoreCrsGroup, fill = factor(groupUncRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreCrsGroup - se_Crs_Group, ymax = mean_RatingScoreCrsGroup + se_Crs_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+
+Curiosity as a function of objective valence
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = groupVal_level_crs) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingScoreCrs, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreCrs - se_Crs_Group, ymax = mean_RatingScoreCrs + se_Crs_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+Curiosity as a function of subjective valence
+
+```{r}
+group_order <- c( "negative val", "positive val")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = crs_valRated_group) + 
+    aes(x = factor(groupValRated,levels = group_order), y = mean_RatingScoreCrsGroup, fill = factor(groupValRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreCrsGroup - se_Crs_Group, ymax = mean_RatingScoreCrsGroup + se_Crs_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+
+
+Resolution
+
+Resolution as a function of objective valence
+
+```{r}
+group_order <- c( "neg conditions", "pos conditions")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = groupVal_level_resOld) + 
+    aes(x = factor(groupVal,levels = group_order), y = mean_RatingResOld, fill = factor(groupVal)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingResOld - se_ResOld_Group, ymax = mean_RatingResOld + se_ResOld_Group), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+Resolution as a function of subjective valence
+
+```{r}
+group_order <- c( "negative val", "positive val")
+valenceColor <- setNames(c("coral", "darkseagreen2"), group_order)
+
+ggplot(data = resOld_valRated_group) + 
+    aes(x = factor(groupValRated,levels = group_order), y = mean_RatingScoreResOldGroup, fill = factor(groupValRated)) +  # Corrected closing parenthesis for aes()
+    geom_bar(stat = "identity", position = "dodge") +
+    scale_fill_manual(values = valenceColor) +  # Set custom colors using valenceColor
+    geom_errorbar(aes(ymin = mean_RatingScoreResOldGroup - se_ResOld, ymax = mean_RatingScoreResOldGroup + se_ResOld), width = 0.2, position = position_dodge(width = 0.9)) +
+    labs(x = " ", y = " ") +
+    #scale_x_discrete(labels = NULL)+
+    scale_y_continuous(breaks = seq(-1, 1, by = 0.3)) +
+    theme_classic()
+```
+
+LM
+
+```{r}
+
+C <- sentence_level_overall1$mean_RatingScoreCrs
+C_OldSent<-sentence_level_crs_OldSent$mean_RatingScoreCrs
+C_NewSent<-sentence_level_crs_NewSent$mean_RatingScoreCrs
+
+UOld<-sentence_level_overall1$mean_RatingScoreUncOld
+UOld_OldSent<-sentence_level_uncOld_OldSent$mean_RatingScoreUncOld
+UOld_NewSent<-sentence_level_uncOld_NewSent$mean_RatingScoreUncOld
+
+ROld<-sentence_level_overall1$mean_RatingScoreResOld
+ROld_OldSent<-sentence_level_resOld_OldSent$mean_RatingScoreResOld
+ROld_NewSent<-sentence_level_resOld_NewSent$mean_RatingScoreResOld
+
+
+V1<-sentence_level_overall1$mean_RatingScoreVal1
+V1_OldSent<-sentence_level_val1_OldSent$mean_RatingScoreVal1
+V1_NewSent<-sentence_level_val1_NewSent$mean_RatingScoreVal1
+
+V2<-sentence_level_overall1$mean_RatingScoreVal2
+V2_OldSent<-sentence_level_val2_OldSent$mean_RatingScoreVal2
+V2_NewSent<-sentence_level_val2_NewSent$mean_RatingScoreVal2
+
+V <- (sentence_level_overall1$mean_RatingScoreVal1 + sentence_level_overall1$mean_RatingScoreVal2)/2
+V_OldSent<-(sentence_level_val1_OldSent$mean_RatingScoreVal1 + sentence_level_val2_OldSent$mean_RatingScoreVal2)/2
+V_NewSent<-(sentence_level_val1_NewSent$mean_RatingScoreVal1 + sentence_level_val2_NewSent$mean_RatingScoreVal2)/2
+
+S<-sentence_level_overall1$mean_RatingScoreHappy
+S_OldSent<-sentence_level_happy_oldSent$mean_RatingScoreHappy
+S_NewSent<-sentence_level_happy_newSent$mean_RatingScoreHappy
+
+
+S1<-sentence_level_sat1$mean_RatingScoreSat1
+S1_Old<-sentence_level_sat1_OldSent$mean_RatingScoreSat1
+S1_New<-sentence_level_sat1_NewSent$mean_RatingScoreSat1
+
+
+SURP<-sentence_level_surp$mean_RatingScoreSurp
+SURP_Old<-sentence_level_surp_OldSent$mean_RatingScoreSurp
+SURP_New<-sentence_level_surp_NewSent$mean_RatingScoreSurp
+
+
+meanSURP_Old<-mean(SURP_Old)
+abs_Surp_Old<-abs(SURP_Old-meanSURP_Old)
+abs_Surp2_Old<-abs(SURP_Old-mean(SURP_Old))
+
+meanSURP_New<-mean(SURP_New)
+abs_Surp_New<-abs(SURP_New-meanSURP_New)
+abs_Surp2_New<-abs(SURP_New-mean(SURP_New))
+
+
+meanSURP<-mean(SURP)
+abs_Surp<-abs(SURP-meanSURP)
+abs_Surp2<-abs(SURP-mean(SURP))
+
+
+
+
+model_df_Old<-data.frame(C_OldSent, S1_Old, S_OldSent, SURP_Old, abs_Surp_Old, abs_Surp2_Old, UOld_OldSent, ROld_OldSent, V_OldSent, V1_OldSent, V2_OldSent)
+cor_model_df_Old<-as.data.frame(cor(model_df_Old))
+
+
+model_df_New<-data.frame(C_NewSent, S1_New, S_NewSent, SURP_New, abs_Surp_New, abs_Surp2_New, UOld_NewSent, ROld_NewSent, V_NewSent, V1_NewSent, V2_NewSent)
+cor_model_df_New<-as.data.frame(cor(model_df_New))
+
+
+model_df_Overall<-data.frame(C, S1, S, SURP, abs_Surp, abs_Surp2, UOld, ROld, V, V1, V2)
+cor_model_df_Overall<-as.data.frame(cor(model_df_Overall))
+
+
+
+
+write.xlsx(model_df_Old, "model_df_Old.xlsx")
+write.xlsx(model_df_New, "model_df_New.xlsx")
+write.xlsx(model_df_Overall, "model_df_Overall.xlsx")
+
+write.xlsx(cor_model_df_Old, "cor_model_df_Old.xlsx")
+write.xlsx(cor_model_df_New, "cor_model_df_New.xlsx")
+write.xlsx(cor_model_df_Overall, "cor_model_df_Overall.xlsx")
+
+```
+
+
+```{r}
+#correlation matrix
+
+df_cor_fig<-data.frame(UOld,ROld, V)
+cor_matrix<-cor(df_cor_fig)
+testRes = cor.mtest(cor_matrix, conf.level = 0.95)
+
+
+corrplot(cor_matrix, method = "color",p.mat = testRes$p, sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.9,
+         insig = 'label_sig', pch.col = 'white',addCoef.col = 'black', col = COL1('Blues'))
+
+
+
+df_cor_fig_Exp2<-data.frame(UOld_OldSent,ROld_OldSent, V_OldSent)
+cor_matrix_OldSent<-cor(df_cor_fig_Exp2)
+testRes = cor.mtest(cor_matrix_OldSent, conf.level = 0.95)
+corrplot(cor_matrix_OldSent, method = "color", addCoef.col = 'black', col = COL1('Greens'))
+
+
+
+
+df_cor_fig_Exp3<-data.frame(UOld_NewSent,ROld_NewSent, V_NewSent)
+cor_matrix_NewSent<-cor(df_cor_fig_Exp3)
+testRes = cor.mtest(cor_matrix_NewSent, conf.level = 0.95)
+corrplot(cor_matrix_NewSent, method = "color", addCoef.col = 'black', col = COL1('OrRd'))
+
+
+
+
+
+
+
+```
+
+
+
+
+```{r}
+df<-data.frame(S_OldSent, V_OldSent, UOld_OldSent, ROld_OldSent)
+
+modelExp2<-lm(S_OldSent~ UOld_OldSent+ ROld_OldSent+ V_OldSent+UOld_OldSent*V_OldSent, df)
+
+summary(modelExp2)
+```
+
+
+```{r}
+
+S1Model_Overall<-(lm(S1~UOld, model_df_Overall))
+summary(S1Model_Overall)
+BIC(S1Model_Overall)
+
+
+S1Model_Overall2<-(lm(S1~V1, model_df_Overall))
+summary(S1Model_Overall2)
+BIC(S1Model_Overall2)
+
+
+# Step 1: Orthogonalize V with respect to U
+model_v_u_S1 <- lm(V1 ~ UOld, data = model_df_Overall)
+orthogonalized_v_S1 <- residuals(model_v_u_S1)
+
+df<-data.frame (S1, UOld, orthogonalized_v_S1)
+
+S1Model_Overall3<-(lm(S1~orthogonalized_v_S1+UOld+ROld, df))
+summary(S1Model_Overall3)
+BIC(S1Model_Overall3)
+
+S1Model_Crs<-(lm(S1~C, df))
+summary(S1Model_Crs)
+BIC(S1Model_Crs)
+
+```
+
+
+
+```{r}
+
+df<-data.frame(C, UOld, ROld, S, V, V1)
+
+
+chosenModel<-(lm(S~UOld + ROld + V + UOld*V, df))
+residualModel<-(lm(S~ROld + V + UOld*V, df))
+summary(chosenModel)
+
+BIC(chosenModel)
+
+
+
+chosenModelC<-(lm(S~UOld + ROld + V + UOld*V + C, df))
+residualModel<-(lm(S~ROld + V + UOld*V, df))
+summary(chosenModelC)
+
+BIC(chosenModelC)
+
+chosenModelC2<-(lm(C~UOld + V1 + UOld*V1, df))
+summary(chosenModelC2)
+BIC(chosenModelC2)
+
+
+chosenModelC3<-(lm(C~UOld + orthogonalized_v_S1 + UOld*orthogonalized_v_S1, df))
+summary(chosenModelC3)
+BIC(chosenModelC3)
+
+
+chosenModelC3<-(lm(C~UOld , df))
+summary(chosenModelC3)
+BIC(chosenModelC3)
+
+
+model_u_v_C <- lm(UOld ~ V1, data = model_df_Overall)
+orthogonalized_u_C <- residuals(model_u_v_C)
+
+df<-data.frame (C, orthogonalized_u_C, V1)
+
+
+chosenModelC4<-(lm(C~orthogonalized_u_C + V1 , df))
+summary(chosenModelC4)
+BIC(chosenModelC4)
+
+
+
+```
+
+
+```{r}
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+
+# chosenModel_Old<-(lm(S_OldSent~UOld_OldSent + ROld_OldSent + V_OldSent + UOld_OldSent*V_OldSent, df))
+# residualModel_Old<-(lm(S_OldSent~ROld_OldSent + V_OldSent + UOld_OldSent*V_OldSent, df))
+# summary(chosenModel_Old)
+# 
+# BIC(chosenModel_Old)
+
+
+#r,v,uv,rv
+
+#BEST MODEL
+chosenModel_Old<-(lm(S_OldSent~ ROld_OldSent + V_OldSent + UOld_OldSent*V_OldSent + ROld_OldSent*V_OldSent, df))
+summary(chosenModel_Old)
+BIC(chosenModel_Old)
+
+
+
+
+```
+
+```{r}
+df<-data.frame(C_NewSent, UOld_NewSent, ROld_NewSent, S_NewSent, V_NewSent)
+
+
+chosenModel_New<-(lm(S_NewSent~ROld_NewSent + V_NewSent, df))
+summary(chosenModel_New)
+
+BIC(chosenModel_New)
+```
+
+
+
+
+
+Satisfaction as a function of Uncertainty Old Sent
+
+```{r}
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+
+chosenModel_Old<-(lm(S_OldSent~UOld_OldSent + ROld_OldSent + V_OldSent + UOld_OldSent*V_OldSent, df))
+
+model<-chosenModel_Old
+
+y <- model$residuals + model$fitted.values
+x1 <- model$model[, "UOld_OldSent"]
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey", size = 3)+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="green",linewidth=1, fill="darkseagreen2")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Valence",y="Satisfaction 1")+
+  theme_bw(base_size = 16) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+cor(C,UOld)
+
+#ggsave(file = "Exp2and3_int_S1_V.png",plot = plot, dpi = 600, width = 10, height = 7)
+```
+
+
+
+
+
+```{r}
+#interaction plot OldSent
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+
+# Create a dataframe with your data, replace this with your actual data
+# df <- your_dataframe_here
+
+# Calculate the overall median of V_OldSent
+median_V <- median(df$V_OldSent)
+
+# Calculate the median for valence ratings below and above the overall median
+median_below <- median(df$V_OldSent[df$V_OldSent <= median_V])
+median_above <- median(df$V_OldSent[df$V_OldSent > median_V])
+
+# Categorize V_OldSent into four categories
+df$V_category <- ifelse(min(df$V_OldSent) <= df$V_OldSent & df$V_OldSent < median_below, "Low Below Median",
+                        ifelse(median_below < df$V_OldSent & df$V_OldSent <= median_V, "High Below Median",
+                               ifelse(median_V < df$V_OldSent & df$V_OldSent <= median_above, "Low Above Median", 
+                                      ifelse(median_above < df$V_OldSent & df$V_OldSent <= max(df$V_OldSent), "High Above Median", NA))))
+
+# Create the interaction plot with customized colors
+int_V_U <- ggplot(df, aes(x = UOld_OldSent, y = S_OldSent, color = V_category)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1, fill = "bisque") +
+  annotate("text", x = df$UOld_OldSent[which.max(df$S_OldSent)], y = max(df$S_OldSent), 
+           label = paste("Max Valence:", sprintf("%.2f", max(df$V_OldSent))), vjust = -0.5) +
+  annotate("text", x = df$UOld_OldSent[which.min(df$S_OldSent)], y = min(df$S_OldSent), 
+           label = paste("Min Valence:", sprintf("%.2f", min(df$V_OldSent))), vjust = 1.5) +
+  annotate("text", x = df$UOld_OldSent, y = df$S_OldSent, 
+           label = sprintf("%.2f", df$V_OldSent), vjust = -0.5, hjust = -0.2, color = "black", size = 3) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V",
+       x = "UOld", y = "S", color = "V Category") +
+  scale_color_manual(values = c('darkgreen', 'coral', 'darkolivegreen3', 'darkred')) +  # Custom colors
+  theme_classic()
+
+print(int_V_U)
+
+ggsave(file = "Exp2_int_V_U.png",plot = int_V_U, dpi = 600, width = 10, height = 7)
+
+
+
+
+```
+
+
+
+```{r}
+#interaction plot OldSent
+
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+median_V<-median(df$V_OldSent)
+
+df$V_category <- ifelse(df$V_OldSent > median_V, "V Above Median", "V Below Median")
+
+
+int_V_U_OldSent<-ggplot(df, aes(x = UOld_OldSent, y = S_OldSent, color = V_category)) +
+  geom_point(size=3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x,linewidth=1, fill="grey",) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V Old Sentences",
+       x = "UOld", y = "S", color = "V Category")+
+    scale_color_manual(values = c('darkseagreen2', 'coral'))+
+    theme_classic()
+
+ggsave(file = "Exp2and3_int_V_U_OldSent.png",plot = int_V_U_OldSent, dpi = 600, width = 10, height = 7)
+
+print(int_V_U_OldSent)
+
+```
+
+Interaction plot Overall, with 4 divisions
+```{r}
+df <- data.frame(C, UOld, ROld, S, V)
+
+# Calculate the overall median of V
+median_V <- median(df$V)
+
+# Calculate the median for valence ratings below and above the overall median
+median_below <- median(df$V[df$V <= median_V])
+median_above <- median(df$V[df$V > median_V])
+
+# Categorize V into four categories
+df$V_category <- ifelse(min(df$V) <= df$V & df$V < median_below, "Low Below Median",
+                        ifelse(median_below < df$V & df$V <= median_V, "High Below Median",
+                               ifelse(median_V < df$V & df$V <= median_above, "Low Above Median", 
+                                      ifelse(median_above < df$V & df$V <= max(df$V), "High Above Median", NA))))
+
+# Create the interaction plot with customized colors
+int_V_U <- ggplot(df, aes(x = UOld, y = S, color = V_category)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1, fill = "bisque") +
+  annotate("text", x = df$UOld[which.max(df$S)], y = max(df$S), 
+           label = paste("Max Valence:", sprintf("%.2f", max(df$V))), vjust = -0.5) +
+  annotate("text", x = df$UOld[which.min(df$S)], y = min(df$S), 
+           label = paste("Min Valence:", sprintf("%.2f", min(df$V))), vjust = 1.5) +
+  annotate("text", x = df$UOld, y = df$S, 
+           label = sprintf("%.2f", df$V), vjust = 0, hjust = 0) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V",
+       x = "UOld", y = "S", color = "V Category") +
+  scale_color_manual(values = c('darkgreen', 'coral', 'darkolivegreen3', 'darkred'), ) +  # Custom colors
+  theme_classic()
+
+print(int_V_U)
+
+
+ggsave(file = "Exp2and3_int_V_U.png",plot = int_V_U, dpi = 600, width = 10, height = 7)
+
+
+
+
+```
+
+```{r}
+#interaction plot R*V  OldSent
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+
+# Create a dataframe with your data, replace this with your actual data
+# df <- your_dataframe_here
+
+# Calculate the overall median of V_OldSent
+median_V <- median(df$V_OldSent)
+
+# Calculate the median for valence ratings below and above the overall median
+median_below <- median(df$V_OldSent[df$V_OldSent <= median_V])
+median_above <- median(df$V_OldSent[df$V_OldSent > median_V])
+
+# Categorize V_OldSent into four categories
+df$V_category <- ifelse(min(df$V_OldSent) <= df$V_OldSent & df$V_OldSent < median_below, "Low Below Median",
+                        ifelse(median_below < df$V_OldSent & df$V_OldSent <= median_V, "High Below Median",
+                               ifelse(median_V < df$V_OldSent & df$V_OldSent <= median_above, "Low Above Median", 
+                                      ifelse(median_above < df$V_OldSent & df$V_OldSent <= max(df$V_OldSent), "High Above Median", NA))))
+
+# Create the interaction plot with customized colors
+int_V_R <- ggplot(df, aes(x = ROld_OldSent, y = S_OldSent, color = V_category)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1, fill = "bisque") +
+  annotate("text", x = df$ROld_OldSent[which.max(df$S_OldSent)], y = max(df$S_OldSent), 
+           label = paste("Max Valence:", sprintf("%.2f", max(df$V_OldSent))), vjust = -0.5) +
+  annotate("text", x = df$ROld_OldSent[which.min(df$S_OldSent)], y = min(df$S_OldSent), 
+           label = paste("Min Valence:", sprintf("%.2f", min(df$V_OldSent))), vjust = 1.5) +
+  annotate("text", x = df$ROld_OldSent, y = df$S_OldSent, 
+           label = sprintf("%.2f", df$V_OldSent), vjust = -0.5, hjust = -0.2, color = "black", size = 3) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V",
+       x = "ROld", y = "S", color = "V Category") +
+  scale_color_manual(values = c('darkgreen', 'coral', 'darkolivegreen3', 'darkred')) +  # Custom colors
+  theme_classic()
+
+print(int_V_R)
+
+```
+
+
+
+```{r}
+df <- data.frame(C, UOld, ROld, S, V)
+
+# Calculate the overall median of V
+median_V <- median(df$V)
+
+# Calculate the median for valence ratings below and above the overall median
+median_below <- median(df$V[df$V <= median_V])
+median_above <- median(df$V[df$V > median_V])
+
+# Categorize V into four categories
+df$V_category <- ifelse(min(df$V) <= df$V & df$V < median_below, "Low Below Median",
+                        ifelse(median_below < df$V & df$V <= median_V, "High Below Median",
+                               ifelse(median_V < df$V & df$V <= median_above, "Low Above Median", 
+                                      ifelse(median_above < df$V & df$V <= max(df$V), "High Above Median", NA))))
+
+# Create the interaction plot with customized colors
+int_V_R<- ggplot(df, aes(x = ROld, y = S, color = V_category)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1, fill = "bisque") +
+  annotate("text", x = df$UOld[which.max(df$S)], y = max(df$S), 
+           label = paste("Max Valence:", sprintf("%.2f", max(df$V))), vjust = -0.5) +
+  annotate("text", x = df$UOld[which.min(df$S)], y = min(df$S), 
+           label = paste("Min Valence:", sprintf("%.2f", min(df$V))), vjust = 1.5) +
+  annotate("text", x = df$UOld, y = df$S, 
+           label = sprintf("%.2f", df$V), vjust = 0, hjust = 0) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V",
+       x = "ROld", y = "S", color = "V Category") +
+  scale_color_manual(values = c('darkgreen', 'coral', 'darkolivegreen3', 'darkred'), ) +  # Custom colors
+  theme_classic()
+
+print(int_V_R)
+
+```
+
+
+
+```{r}
+# Perform t-tests between categories
+categories <- unique(df$V_category)
+t_test_results <- list()
+
+for (i in 1:(length(categories) - 1)) {
+  for (j in (i + 1):length(categories)) {
+    cat1 <- categories[i]
+    cat2 <- categories[j]
+    subset1 <- df$V[df$V_category == cat1]
+    subset2 <- df$V[df$V_category == cat2]
+    
+    t_test_result <- t.test(subset1, subset2)
+    t_test_results[[paste(cat1, "vs", cat2)]] <- t_test_result
+  }
+}
+
+# Print t-test results
+for (result in t_test_results) {
+  print(result)
+}
+
+
+
+# Perform ANOVA
+anova_result <- df %>%
+  group_by(V_category) %>%
+  summarise(mean_satisfaction = mean(UOld_OldSent),
+            n = n())
+
+# Print the ANOVA results
+print(anova_result)
+
+# Perform ANOVA test
+anova_model <- aov(UOld_OldSent ~ V_category, data = df)
+anova_summary <- summary(anova_model)
+print(anova_summary)
+
+# Print Tukey post hoc test for pairwise comparisons
+tukey_test <- TukeyHSD(anova_model)
+print(tukey_test)
+
+
+
+
+
+```
+
+
+
+
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(dplyr)
+library(broom)  # For tidying regression results
+
+# Create a dataframe with your data, replace this with your actual data
+# df <- your_dataframe_here
+
+# Calculate the median of V
+median_V <- median(df$V_OldSent)
+
+# Categorize V into "Above Median" and "Below Median"
+df$V_category <- ifelse(df$V_OldSent > median_V, "V Above Median", "V Below Median")
+
+# Create the interaction plot
+int_V_U_OldSent <- ggplot(df, aes(x = UOld_OldSent, y = S_OldSent, color = V_category)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", se = TRUE, formula = y ~ x, linewidth = 1, fill = "bisque") +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V Old Sentences",
+       x = "UOld", y = "S", color = "V Category") +
+  scale_color_manual(values = c('darkseagreen2', 'coral')) +
+  theme_classic()
+
+# Perform linear regressions
+lm_results <- df %>%
+  group_by(V_category) %>%
+  do(tidy(lm(S_OldSent ~ UOld_OldSent, data = .)))
+
+# Extract coefficients for each line
+coef_below <- lm_results %>%
+  filter(V_category == "V Below Median", term=='UOld_OldSent') %>%
+  select(estimate)
+
+coef_above <- lm_results %>%
+  filter(V_category == "V Above Median" ,term=='UOld_OldSent') %>%
+  select(estimate)
+
+# Perform t-test between coefficients
+t_test_result <- t.test(coef_below$estimate, coef_above$estimate)
+
+# Print t-test results
+print(t_test_result)
+
+
+# Print the plot
+print(int_V_U_OldSent)
+
+```
+
+
+
+
+```{r}
+# Load required library
+library(ggplot2)
+
+# Create a dataframe with your data, replace this with your actual data
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+# Calculate the median of V
+median_V <- median(df$V_OldSent)
+
+# Categorize V into "Above Median" and "Below Median"
+df$V_category <- ifelse(df$V_OldSent > median_V, "V Above Median", "V Below Median")
+
+# Categorize UOld_OldSent into "Low Uncertainty" and "High Uncertainty"
+df$Uncertainty <- ifelse(df$UOld_OldSent <= median(df$UOld_OldSent), "Low Uncertainty", "High Uncertainty")
+
+# Create the bar interaction plot with facets
+bar_int_U_V <- ggplot(df, aes(x = Uncertainty, y = S_OldSent, fill = V_category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(rows = vars(Uncertainty)) +
+  labs(title = "Bar Interaction Plot: Satisfaction by Valence and Uncertainty",
+       x = "Valence Category", y = "Satisfaction", fill = "Valence Category") +
+  scale_fill_manual(values = c('darkseagreen2', 'coral')) +
+  theme_classic()
+
+# Print the plot
+print(bar_int_U_V)
+
+
+```
+
+
+
+Orhtogonalise the variables
+
+```{r}
+# Create a dataframe with your data, replace this with your actual data
+
+
+
+# Step 1: Orthogonalize V with respect to U
+model_v_u <- lm(V_OldSent ~ UOld_OldSent, data = df)
+orthogonalized_v_OldSent <- residuals(model_v_u)
+
+# Step 2: Orthogonalize U with respect to V
+model_u_v <- lm(UOld_OldSent ~ V_OldSent, data = df)
+orthogonalized_u_OldSent <- residuals(model_u_v)
+
+
+df<-data.frame(S_OldSent , UOld_OldSent, V_OldSent, orthogonalized_u_OldSent,ROld_OldSent ,orthogonalized_v_OldSent ,orthogonalized_u_OldSent)
+
+# Now check the model again
+
+
+chosenModel_Old_OrtV<-(lm(S_OldSent~UOld_OldSent + ROld_OldSent + orthogonalized_v_OldSent + UOld_OldSent*orthogonalized_v_OldSent + ROld_OldSent*orthogonalized_v_OldSent, df))
+
+# residualModel_Old_OrtV<-(lm(S_OldSent~ROld_OldSent + orthogonalized_v_OldSent + UOld_OldSent*orthogonalized_v_OldSent, df))
+ summary(chosenModel_Old_OrtV)
+
+BIC(chosenModel_Old_OrtV)
+
+
+chosenModel_Old_OrtV2<-(lm(S_OldSent~ ROld_OldSent + orthogonalized_v_OldSent + UOld_OldSent*orthogonalized_v_OldSent + ROld_OldSent*orthogonalized_v_OldSent, df))
+summary(chosenModel_Old_OrtV2)
+BIC(chosenModel_Old_OrtV2)
+
+
+
+chosenModel_Old_OrtU<-(lm(S_OldSent~orthogonalized_u_OldSent + ROld_OldSent + V_OldSent, df))
+#residualModel_Old_OrtU<-(lm(S_OldSent~ROld_OldSent + V_OldSent + orthogonalized_u_OldSent*V_OldSent, df))
+summary(chosenModel_Old_OrtU)
+
+BIC(chosenModel_Old_OrtU)
+
+
+
+```
+
+
+```{r}
+# Create a dataframe with your data, replace this with your actual data
+
+
+
+# Step 1: Orthogonalize V with respect to U
+model_v_u <- lm(V_NewSent ~ UOld_NewSent, data = df)
+orthogonalized_v_NewSent <- residuals(model_v_u)
+
+# Step 2: Orthogonalize U with respect to V
+model_u_v <- lm(UOld_NewSent ~ V_OldSent, data = df)
+orthogonalized_u_NewSent <- residuals(model_u_v)
+
+
+df<-data.frame(S_NewSent,UOld_NewSent, V_NewSent, orthogonalized_u_NewSent,ROld_NewSent ,orthogonalized_v_NewSent ,orthogonalized_u_NewSent)
+
+# Now check the model again
+
+
+
+chosenModel_New_OrtV<-(lm(S_NewSent~UOld_NewSent + ROld_NewSent + orthogonalized_v_NewSent, df))
+residualModel_New_OrtV<-(lm(S_NewSent~ROld_NewSent + orthogonalized_v_NewSent + UOld_NewSent*orthogonalized_v_NewSent, df))
+summary(chosenModel_New_OrtV2)
+
+BIC(chosenModel_New_OrtV)
+
+
+
+
+chosenModel_New_OrtU<-(lm(S_NewSent~orthogonalized_u_NewSent + ROld_NewSent + V_NewSent + orthogonalized_u_NewSent*V_NewSent, df))
+summary(chosenModel_New_OrtU)
+BIC(chosenModel_New_OrtU)
+
+
+chosenModel_New_OrtU2<-(lm(S_NewSent~ ROld_NewSent + V_NewSent + orthogonalized_u_NewSent*ROld_NewSent , df))
+summary(chosenModel_New_OrtU2)
+BIC(chosenModel_New_OrtU2)
+
+
+
+```
+
+Overall Model orth
+```{r}
+
+df <- data.frame(C, UOld, ROld, S, V)
+
+
+
+# Step 1: Orthogonalize V with respect to U
+model_v_u <- lm(V ~ UOld, data = df)
+orthogonalized_v <- residuals(model_v_u)
+
+# Step 2: Orthogonalize U with respect to V
+model_u_v <- lm(UOld ~ V, data = df)
+orthogonalized_u <- residuals(model_u_v)
+
+df <- data.frame(S, UOld, V, orthogonalized_u, ROld, orthogonalized_v, orthogonalized_u)
+
+
+
+chosenModel<-(lm(S~C + ROld + V + C*V,  df))
+residualModel<-(lm(S~ROld + V + UOld*V, df))
+summary(chosenModel)
+BIC(chosenModel)
+
+
+chosenModel_OrtU<-(lm(S~orthogonalized_u + ROld + V + orthogonalized_u*V, df))
+summary(chosenModel_OrtU)
+BIC(chosenModel_OrtU)
+
+
+chosenModel_OrtVx<-(lm(S~UOld + ROld + orthogonalized_v + UOld*orthogonalized_v, df))
+summary(chosenModel_OrtVx)
+BIC(chosenModel_OrtVx)
+
+
+chosenModel_OrtV2<-(lm(S~UOld + ROld + orthogonalized_v, df))
+summary(chosenModel_OrtV2)
+BIC(chosenModel_OrtV2)
+
+
+chosenModel_OrtV<-(lm(S~UOld+ ROld+orthogonalized_v, df))
+summary(chosenModel_OrtV)
+BIC(chosenModel_OrtV)
+
+
+
+```
+
+
+
+
+
+
+
+```{r}
+
+
+df<-data.frame(S_OldSent,UOld_OldSent, orthogonalized_u_OldSent,ROld_OldSent ,orthogonalized_v_OldSent)
+
+median_V<-median(df$orthogonalized_v_OldSent)
+
+df$V_category <- ifelse(df$orthogonalized_v_OldSent > median_V, "V Above Median", "V Below Median")
+
+
+int_V_U_OldSent_Ort<-ggplot(df, aes(x = orthogonalized_u_OldSent, y = S_OldSent, color = V_category)) +
+  geom_point(size=3) +
+  geom_smooth(method = "lm", se = FALSE, formula = y ~ x) +
+  labs(title = "Interaction Plot: UOld vs. Satisfaction by V Old Sentences",
+       x = "UOld", y = "S", color = "V Category")+
+    scale_color_manual(values = c('darkseagreen2', 'coral'))+
+    theme_classic()
+
+
+print(int_V_U_OldSent_Ort)
+
+ggsave(file = "Exp2and3_int_V_U_OldSent_OrtV.png",plot = int_V_U_OldSent_Ort, dpi = 600, width = 10, height = 7)
+
+```
+
+
+
+
+
+```{r}
+
+crsModel1<-lm(C~UOld + V1, df)
+summary(crsModel1)
+BIC(crsModel1)
+
+
+crsModel2<-lm(C~UOld + V1 +V1*UOld, df)
+summary(crsModel2)
+BIC(crsModel2)
+
+
+crsModel5<-lm(C~UOld, df)
+summary(crsModel5)
+BIC(crsModel5)
+
+crsModel6<-lm(C~V1, df)
+summary(crsModel6)
+BIC(crsModel6)
+
+
+
+
+
+```
+
+S1, V1, U
+
+```{r}
+df<-data.frame(S1, V1_OldSent, UOld_OldSent, C_OldSent)
+
+#BEST MODEL
+S1Model<-(lm(S1~UOld_OldSent + V1_OldSent, df))
+summary(S1Model)
+BIC(S1Model)
+
+
+
+#ALT MODELS
+S2Model<-(lm(S1~ C_OldSent + V1_OldSent, df))
+summary(S2Model)
+BIC(S2Model)
+
+S3Model<-(lm(S1~ C_OldSent, df))
+summary(S3Model)
+BIC(S3Model)
+```
+Plot S1
+
+```{r}
+
+
+model <- S1Model
+y <- model$residuals + model$fitted.values
+x1 <- model$model[, "V1_OldSent"]
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey", size = 3)+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="green",linewidth=1, fill="darkseagreen2")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Valence",y="Satisfaction 1")+
+  theme_bw(base_size = 16) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+cor(C,UOld)
+
+ggsave(file = "Exp2and3_int_S1_V.png",plot = plot, dpi = 600, width = 10, height = 7)
+```
+
+
+
+
+
+
+Surprise
+```{r}
+
+maxSurp<-max(SURP)
+minSurp<-min(SURP)
+meanSurp<-mean(maxSurp+minSurp)
+
+
+
+#Best model
+#abs(surprise-mean(surprise))
+abs_Surp2<-abs(SURP-mean(SURP))
+
+
+
+SurpModel5<-(lm(S_OldSent~SURP+abs_Surp2+ROld_OldSent+UOld_OldSent+V_OldSent+ UOld_OldSent*V_OldSent, df))
+summary(SurpModel5)
+BIC(SurpModel5)
+
+
+
+
+
+SurpModel3<-(lm(S_OldSent~SURP+abs_Surp2+ROld_OldSent+UOld_OldSent+V_OldSent, df))
+summary(SurpModel3)
+BIC(SurpModel3)
+
+
+
+
+SurpModel2<-(lm(S_OldSent~SURP+abs_Surp2, df))
+summary(SurpModel2)
+BIC(SurpModel2)
+
+
+
+
+
+SurpModel4<-(lm(S_OldSent~SURP+abs_Surp2+ROld_OldSent+UOld_OldSent+V1_OldSent, df))
+summary(SurpModel4)
+BIC(SurpModel4)
+
+
+
+
+#alternative model
+abs_Surp<-abs(SURP-meanSurp)
+
+SurpModel<-(lm(S_OldSent~SURP+abs_Surp, df))
+summary(SurpModel)
+BIC(SurpModel)
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+#get median df
+
+
+C_median <- sentence_level_overall1$median_RatingScoreCrs
+UOld_median<-sentence_level_overall1$median_RatingScoreUncOld
+ROld_median<-sentence_level_overall1$median_RatingScoreResOld
+V_median<- (sentence_level_overall1$median_RatingScoreVal1 + sentence_level_overall1$median_RatingScoreVal2)/2
+V1_median<-sentence_level_overall1$median_RatingScoreVal1
+V2_median<-sentence_level_overall1$median_RatingScoreVal2
+S_median<-sentence_level_overall1$median_RatingScoreHappy
+
+
+df_median<-data.frame(C_median, UOld_median, ROld_median, S_median, V_median, V1_median, V2_median)
+
+write.xlsx(df_median, "Experiment2and3_median.xlsx")
+
+```
+
+
+Plot correlations
+
+
+```{r}
+# organise data
+
+summary(crsModel5)
+
+model <- crsModel5
+y <- model$residuals + model$fitted.values
+x1 <- model$model[, "UOld"]
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey", size = 3)+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="blue",linewidth=1, fill="turquoise")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Uncertainty",y="Satisfaction")+
+  theme_bw(base_size = 16) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+cor(C,UOld)
+
+ggsave(file = "Exp2and3_int_C_U.png",plot = plot, dpi = 600, width = 10, height = 7)
+
+```
+
+
+
+```{r}
+
+
+df<-data.frame(C_OldSent, UOld_OldSent, ROld_OldSent, S_OldSent, V_OldSent)
+
+
+chosenModel_Old<-(lm(S_OldSent~UOld_OldSent + ROld_OldSent + V_OldSent + UOld_OldSent*V_OldSent, df))
+
+model<-chosenModel_Old
+
+
+#Satisfaction as a function of Uncertainty 
+
+
+# Replace "df" with your actual dataframe
+linear_plot <- ggplot(chosenModel, aes(x = UOld, y = S)) +
+  geom_point(color = "grey") +  # Scatter plot points
+  geom_smooth(method = "lm", se = TRUE, color="indianred3",linewidth=1, fill="pink")+
+  labs(title = "Linear Regression: S vs. U",
+       x = "U (Independent Variable)",
+       y = "S (Dependent Variable)")+
+  theme_minimal()
+
+
+
+x1 <- chosenModel_Old$model[, "UOld_OldSent"]
+y <- residualModel_Old$residuals 
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey")+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="green",linewidth=1, fill="darkseagreen2")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Valence",y="Satisfaction")+
+  theme_bw(base_size = 6) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+
+
+print(plot)
+```
+
+
+
+
+
+
+```{r}
+
+df<-data.frame(C, UOld, ROld, S, V)
+
+chosenModel<-(lm(S~UOld + ROld + V + UOld*V, df))
+residualModel<-(lm(S~ROld + V + UOld*V, df))
+
+
+# organise data
+
+x1 <- chosenModel$model[, "UOld"]
+y <- residualModel$residuals 
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey")+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="indianred3",linewidth=1, fill="pink")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Uncertainty",y="Satisfaction")+
+  theme_bw(base_size = 6) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+
+
+#figure4F<-plot
+#ggsave(file = "figure4F.pdf",plot = figure4F, dpi = 600, width = 2.5, height = 2.5)
+
+```
+
+```{r}
+
+
+df<-data.frame(C, UOld, ROld, S, V)
+
+chosenModel<-(lm(S~UOld + ROld + V + UOld*V, df))
+residualModel<-(lm(S~ROld + V + UOld*V, df))
+
+x1 <- chosenModel$model[, "UOld"]
+y <- residualModel$residuals 
+df <- data.frame(x1 = x1, y = y)
+
+df <- df %>%
+  mutate(y = y(lm(S ~ V + ROld)))
+
+ggplot(data, aes(x = x1, y = y)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Scatter plot with Regression Line",
+       x = "Uncertainty",
+       y = "Satisfaction (Residuals)") +
+  theme_minimal()
+
+```
+
+
+
+
+Satisfaction as a function of resolution
+
+```{r}
+# organise data
+
+
+df<-data.frame(C, UOld, ROld, S, V)
+
+chosenModel<-(lm(S~UOld + ROld + V + UOld*V, df))
+residualModel<-(lm(S~UOld + V + UOld*V, df))
+
+x1 <- chosenModel$model[, "ROld"]
+y <- residualModel$residuals 
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey")+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="deepskyblue",linewidth=1, fill="lightblue")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Resolution",y="Satisfaction")+
+  theme_bw(base_size = 6) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+
+```
+
+Satisfaction as a function of Valence
+
+
+```{r}
+# organise data
+
+df<-data.frame(C, UOld, ROld, S, V)
+
+chosenModel<-(lm(S~UOld + ROld + V + UOld*V, df))
+residualModel<-(lm(S~ROld + UOld + UOld*V, df))
+
+
+x1 <- chosenModel$model[, "V"]
+y <- residualModel$residuals
+df <- data.frame(x1 = x1, y = y)
+bin_data <- df %>%
+  mutate(bin = cut(x1, breaks = 6)) %>%
+  group_by(bin) %>%
+  summarize(y.mean = mean(y),
+            y.sd = sd(y),
+            x1.mean = mean(x1)) %>%
+  ungroup()
+nsub=dim(df)
+
+# plot the relationship
+plot<-ggplot(df, aes(x = x1, y = y))+
+  geom_point(color="grey")+
+  geom_point(data = bin_data, aes(x = x1.mean, y = y.mean), size = 1)+
+  geom_smooth(method = "lm", se = TRUE, color="green",linewidth=1, fill="darkseagreen2")+
+  geom_errorbar(data = bin_data, aes(x = x1.mean, y = y.mean, ymin = y.mean - y.sd/sqrt(length(x1)), ymax = y.mean + y.sd/sqrt(length(x1))), width = 0.2,size=0.5) +
+labs(x="Valence",y="Satisfaction")+
+  theme_bw(base_size = 6) +
+  theme(axis.line = element_line(color='black'),
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.border = element_blank())
+print(plot)
+
+
+```
+
+ICC consistency
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_crs <- final_df_crsRating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_crs <- icc_df_crs %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_crs %>%
+  filter(participant <= 16)
+
+df_participant_17_to_end <- icc_df_crs %>%
+  filter(participant > 16)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_crs_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_crs_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+#Spearman correlation
+
+# matrix16Cor <- subset(matrix16, select = -participant)
+# colnames(matrix16Cor) <- paste("Column", 1:48, sep = "")
+# cor_matrix<-cor(matrix16Cor, method="spearman")
+```
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_uncOld <- final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating") %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_uncOld <- icc_df_uncOld %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_uncOld %>%
+  filter(participant <= 15)
+
+df_participant_17_to_end <- icc_df_uncOld %>%
+  filter(participant > 15)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_uncOld_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_uncOld_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_resOld <- final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating") %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_resOld <- icc_df_resOld %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_resOld %>%
+  filter(participant <= 15)
+
+df_participant_17_to_end <- icc_df_resOld %>%
+  filter(participant > 15)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_resOld_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_resOld_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+```{r}
+icc_df_happy <- final_df_happyRating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_happy <- icc_df_happy %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_happy %>%
+  filter(participant <= 53)
+
+df_participant_17_to_end <- icc_df_happy %>%
+  filter(participant > 53)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_happy_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_happy_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_sat1 <- final_df_sat1Rating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_sat1 <- icc_df_sat1 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+
+matrix<- dcast(icc_df_sat1, participant ~ combination_number, value.var = "ratingScore")
+
+matrix <- subset(matrix, select = -participant)
+
+
+new_matrix<-t(matrix)
+
+
+library("irr")
+icc_sat1_oldSent<-icc(new_matrix, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+```{r}
+icc_df_val1 <- final_df_val1Rating %>%
+  filter(ratingName=='val1Rating')%>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_val1 <- icc_df_val1 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_val1 %>%
+  filter(participant <= 21)
+
+df_participant_17_to_end <- icc_df_val1 %>%
+  filter(participant > 21)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_val1_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_val1_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+
+
+```{r}
+
+#Adapt rating df to suit icc
+icc_df_val2 <- final_df_val1Rating %>%
+  filter(ratingName=='val2Rating')%>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_val2 <- icc_df_val2 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_val2 %>%
+  filter(participant <= 21)
+
+df_participant_17_to_end <- icc_df_val2 %>%
+  filter(participant > 21)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_val2_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_val2_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "consistency",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+
+
+```{r}
+#ICC parameters
+icc_values <- data.frame(
+  Rating_Name =c("crs_OldSentences", "crs_NewSentences", "unc_OldSentences", "unc_NewSentences", "sat1_OldSentences", "happy_OldSentences", "happy_NewSentences", "resOld_OldSentences", "resOld_NewSentences",  "val1_OldSentences", "val1_NewSentences", "val2_OldSentences", "val2_NewSentences"),
+  ICC = c(icc_crs_oldSent$value, icc_crs_newSent$value, icc_uncOld_oldSent$value,
+          icc_uncOld_newSent$value, icc_sat1_oldSent$value, icc_happy_oldSent$value,
+          icc_happy_newSent$value, icc_resOld_oldSent$value, icc_resOld_newSent$value,
+          icc_val1_oldSent$value, icc_val1_newSent$value, icc_val2_oldSent$value, icc_val2_newSent$value),
+  p_value = c(icc_crs_oldSent$p.value, icc_crs_newSent$p.value,
+              icc_uncOld_oldSent$p.value, icc_uncOld_newSent$p.value,
+              icc_sat1_oldSent$p.value, icc_happy_oldSent$p.value,
+              icc_happy_newSent$p.value, icc_resOld_oldSent$p.value,
+              icc_resOld_newSent$p.value, icc_val1_oldSent$p.value,
+              icc_val1_newSent$p.value, icc_val2_oldSent$p.value,
+              icc_val2_newSent$p.value)
+)
+
+write_xlsx(icc_values, "icc_consistency_values.xlsx")
+
+```
+
+
+
+
+ICC agreement
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_crs <- final_df_crsRating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_crs <- icc_df_crs %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_crs %>%
+  filter(participant <= 16)
+
+df_participant_17_to_end <- icc_df_crs %>%
+  filter(participant > 16)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_crs_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_crs_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_uncOld <- final_df_uncOldRating %>%
+  filter(ratingName=="uncOldRating") %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_uncOld <- icc_df_uncOld %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_uncOld %>%
+  filter(participant <= 15)
+
+df_participant_17_to_end <- icc_df_uncOld %>%
+  filter(participant > 15)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_uncOld_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_uncOld_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_resOld <- final_df_uncOldRating %>%
+  filter(ratingName=="resOldRating") %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_resOld <- icc_df_resOld %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_resOld %>%
+  filter(participant <= 15)
+
+df_participant_17_to_end <- icc_df_resOld %>%
+  filter(participant > 15)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_resOld_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_resOld_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+```{r}
+icc_df_happy <- final_df_happyRating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_happy <- icc_df_happy %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_happy %>%
+  filter(participant <= 53)
+
+df_participant_17_to_end <- icc_df_happy %>%
+  filter(participant > 53)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_happy_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_happy_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+```{r}
+
+#Adapt rating df to suit icc
+
+icc_df_sat1 <- final_df_sat1Rating %>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_sat1 <- icc_df_sat1 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+
+matrix<- dcast(icc_df_sat1, participant ~ combination_number, value.var = "ratingScore")
+
+matrix <- subset(matrix, select = -participant)
+
+
+new_matrix<-t(matrix)
+
+
+library("irr")
+icc_sat1_oldSent<-icc(new_matrix, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+```{r}
+icc_df_val1 <- final_df_val1Rating %>%
+  filter(ratingName=='val1Rating')%>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_val1 <- icc_df_val1 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_val1 %>%
+  filter(participant <= 21)
+
+df_participant_17_to_end <- icc_df_val1 %>%
+  filter(participant > 21)
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_val1_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_val1_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+
+
+```{r}
+
+#Adapt rating df to suit icc
+icc_df_val2 <- final_df_val1Rating %>%
+  filter(ratingName=='val2Rating')%>%
+  select(ratingScore,sntn, condition) %>%
+  mutate(participant = rep(1:(nrow(.) / 48), each = 48))
+
+icc_df_val2 <- icc_df_val2 %>%
+  mutate(sntn = as.numeric(sntn))%>%
+  mutate(combination_number = (sntn * 12) + condition + 1)
+
+df_participant_1_to_16 <- icc_df_val2 %>%
+  filter(participant <= 21)
+
+df_participant_17_to_end <- icc_df_val2 %>%
+  filter(participant > 21)
+
+
+write.xlsx(df_participant_1_to_16, "df_participantVal_1_to_16.xlsx")
+write.xlsx(df_participant_17_to_end, "df_participantVal_17_to_end.xlsx")
+
+
+matrix16 <- dcast(df_participant_1_to_16, participant ~ combination_number, value.var = "ratingScore")
+
+matrix16 <- subset(matrix16, select = -participant)
+
+
+new_matrix16<-t(matrix16)
+
+
+library("irr")
+icc_val2_oldSent<-icc(new_matrix16, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+
+
+matrix17 <- dcast(df_participant_17_to_end, participant ~ combination_number, value.var = "ratingScore")
+
+matrix17<- subset(matrix17, select = -participant)
+
+
+new_matrix17<-t(matrix17)
+
+icc_val2_newSent<-icc(new_matrix17, model = "twoway", 
+    type = "agreement",  
+    unit = "average", r0 = 0, conf.level = 0.95)
+```
+
+
+ICC agreement finalDf
+
+```{r}
+#ICC parameters
+icc_values <- data.frame(
+  Rating_Name =c("crs_OldSentences", "crs_NewSentences", "unc_OldSentences", "unc_NewSentences", "sat1_OldSentences", "happy_OldSentences", "happy_NewSentences", "resOld_OldSentences", "resOld_NewSentences",  "val1_OldSentences", "val1_NewSentences", "val2_OldSentences", "val2_NewSentences"),
+  ICC = c(icc_crs_oldSent$value, icc_crs_newSent$value, icc_uncOld_oldSent$value,
+          icc_uncOld_newSent$value, icc_sat1_oldSent$value, icc_happy_oldSent$value,
+          icc_happy_newSent$value, icc_resOld_oldSent$value, icc_resOld_newSent$value,
+          icc_val1_oldSent$value, icc_val1_newSent$value, icc_val2_oldSent$value, icc_val2_newSent$value),
+  p_value = c(icc_crs_oldSent$p.value, icc_crs_newSent$p.value,
+              icc_uncOld_oldSent$p.value, icc_uncOld_newSent$p.value,
+              icc_sat1_oldSent$p.value, icc_happy_oldSent$p.value,
+              icc_happy_newSent$p.value, icc_resOld_oldSent$p.value,
+              icc_resOld_newSent$p.value, icc_val1_oldSent$p.value,
+              icc_val1_newSent$p.value, icc_val2_oldSent$p.value,
+              icc_val2_newSent$p.value)
+)
+
+write_xlsx(icc_values, "icc_agreement_values.xlsx")
+
+```
+
+
+
+
+
